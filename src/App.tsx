@@ -5,6 +5,7 @@ import Planilla from './pages/Planilla';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
+import Reservas from './pages/Reservas';
 
 const queryClient = new QueryClient();
 
@@ -35,7 +36,7 @@ export default function App() {
             }
           >
             <Route index element={<Planilla />} />
-            <Route path="reservas" element={<Placeholder title="Reservas" />} />
+            <Route path="reservas" element={<Reservas />} />
             <Route path="checkin" element={<Placeholder title="Check-in" />} />
             <Route path="checkout" element={<Placeholder title="Check-out" />} />
             <Route path="vitrina" element={<Placeholder title="Vitrina" />} />

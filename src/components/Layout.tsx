@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore';
 
 const navItems = [
   { path: '/', label: 'Planilla', exact: true },
-  { path: '/reservas', label: 'Reservas' },
+  { path: '/reservas', label: 'Reservas', icon: '📋' },
   { path: '/checkin', label: 'Check-in' },
   { path: '/checkout', label: 'Check-out' },
   { path: '/vitrina', label: 'Vitrina' },

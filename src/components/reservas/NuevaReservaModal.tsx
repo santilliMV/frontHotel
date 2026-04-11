@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { reservationsApi } from '../../api/reservations';
-import type { CreateReservationDTO, OccupantType, ReservationCompanion } from '../../api/reservations';
-import  apiClient from '../../api/client';
+import type { CreateReservationDTO, OccupantType, ReservationCompanion, ReservationResponse } from '../../api/reservations';
+import  apiClient  from '../../api/client';
 import { formatCurrency } from '../../utils/format';
 
 interface RoomType {
@@ -12,9 +12,20 @@ interface RoomType {
   description: string;
 }
 
+interface RoomOption {
+  id: string;
+  roomNumber: string;
+  floor: number;
+  status: string;
+  roomTypeId: string;
+  roomTypeName: string;
+}
+
 interface Props {
   onClose: () => void;
   onCreada: () => void;
+  // Si se pasa, es modo "cambiar habitación" en lugar de crear nueva reserva
+  reservaExistente?: ReservationResponse;
 }
 
 const OCCUPANT_LABELS: Record<OccupantType, string> = {
@@ -25,11 +36,16 @@ const OCCUPANT_LABELS: Record<OccupantType, string> = {
 
 const STEPS = ['Huésped', 'Habitación', 'Fechas', 'Confirmar'];
 
-export default function NuevaReservaModal({ onClose, onCreada }: Props) {
-  const [step, setStep] = useState(0);
+export default function NuevaReservaModal({ onClose, onCreada, reservaExistente }: Props) {
+  const isCambioHabitacion = !!reservaExistente;
+
+  const [step, setStep] = useState(isCambioHabitacion ? 1 : 0);
   const [form, setForm] = useState<Partial<CreateReservationDTO>>({
     numberOfGuests: 1,
     companions: [],
+    // Si es cambio de habitación, pre-llenar datos existentes
+    roomTypeId: reservaExistente?.roomTypeId,
+    occupantType: reservaExistente?.occupantType,
   });
   const [newCompanion, setNewCompanion] = useState<ReservationCompanion>({ name: '' });
   const [error, setError] = useState('');
@@ -39,21 +55,46 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
     queryFn: () => apiClient.get('/rooms/types').then(r => r.data),
   });
 
-  const mutation = useMutation({
+  // Habitaciones disponibles filtradas por tipo seleccionado
+  const { data: allRooms = [] } = useQuery<RoomOption[]>({
+    queryKey: ['rooms-available'],
+    queryFn: () => apiClient.get('/rooms/available').then(r => r.data),
+  });
+
+  const roomsForType = allRooms.filter(r =>
+    form.roomTypeId ? r.roomTypeId === form.roomTypeId : true
+  );
+
+  // Agrupar habitaciones por piso
+  const roomsByFloor = roomsForType.reduce((acc, room) => {
+    const floor = room.floor;
+    if (!acc[floor]) acc[floor] = [];
+    acc[floor].push(room);
+    return acc;
+  }, {} as Record<number, RoomOption[]>);
+
+  const createMutation = useMutation({
     mutationFn: reservationsApi.create,
     onSuccess: () => onCreada(),
     onError: (e: any) => {
-      const msg = e?.response?.data?.error || e?.response?.data?.campos
-        ? JSON.stringify(e.response.data.campos)
-        : 'Error al crear la reserva';
-      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const campos = e?.response?.data?.campos;
+      const msg = campos ? JSON.stringify(campos) : (e?.response?.data?.error || 'Error al crear la reserva');
+      setError(msg);
+    },
+  });
+
+  const changeMutation = useMutation({
+    mutationFn: ({ id, roomId }: { id: string; roomId: string }) =>
+      reservationsApi.changeRoom(id, roomId),
+    onSuccess: () => onCreada(),
+    onError: (e: any) => {
+      setError(e?.response?.data?.error || 'Error al cambiar la habitación');
     },
   });
 
   const set = (key: keyof CreateReservationDTO, value: any) =>
     setForm(f => ({ ...f, [key]: value }));
 
-  // Calcular noches
   const nights = form.checkInDate && form.checkOutDate
     ? Math.max(0, Math.ceil(
         (new Date(form.checkOutDate).getTime() - new Date(form.checkInDate).getTime())
@@ -63,7 +104,7 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
 
   const canNext = () => {
     if (step === 0) return !!(form.firstName?.trim() && form.phone?.trim());
-    if (step === 1) return !!(form.roomTypeId && form.occupantType);
+    if (step === 1) return !!(form.roomTypeId && form.occupantType && form.roomId);
     if (step === 2) return !!(form.checkInDate && form.checkOutDate && nights > 0);
     return true;
   };
@@ -80,8 +121,20 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
 
   const handleSubmit = () => {
     setError('');
-    mutation.mutate(form as CreateReservationDTO);
+    if (isCambioHabitacion && form.roomId) {
+      changeMutation.mutate({ id: reservaExistente.id, roomId: form.roomId });
+    } else {
+      createMutation.mutate(form as CreateReservationDTO);
+    }
   };
+
+  const selectedRoom = allRooms.find(r => r.id === form.roomId);
+  const selectedRoomType = roomTypes.find(r => r.id === form.roomTypeId);
+  const isPending = createMutation.isPending || changeMutation.isPending;
+
+  // En modo cambio de habitación, solo mostramos el paso de habitación
+  const visibleSteps = isCambioHabitacion ? ['Seleccionar habitación', 'Confirmar'] : STEPS;
+  const visibleStep = isCambioHabitacion ? step - 1 : step;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -89,26 +142,30 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
-          <h2 className="text-lg font-bold text-gray-900">Nueva reserva</h2>
+          <h2 className="text-lg font-bold text-gray-900">
+            {isCambioHabitacion
+              ? `Cambiar habitación — ${reservaExistente.reservationNumber}`
+              : 'Nueva reserva'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
         </div>
 
         {/* Steps */}
         <div className="px-6 py-3 border-b flex-shrink-0">
           <div className="flex items-center gap-0">
-            {STEPS.map((label, i) => (
+            {visibleSteps.map((label, i) => (
               <div key={i} className="flex items-center flex-1">
-                <div className={`flex items-center gap-1.5 ${i <= step ? 'text-blue-600' : 'text-gray-400'}`}>
+                <div className={`flex items-center gap-1.5 ${i <= visibleStep ? 'text-blue-600' : 'text-gray-400'}`}>
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2
-                    ${i < step ? 'bg-blue-600 border-blue-600 text-white'
-                    : i === step ? 'border-blue-600 text-blue-600'
+                    ${i < visibleStep ? 'bg-blue-600 border-blue-600 text-white'
+                    : i === visibleStep ? 'border-blue-600 text-blue-600'
                     : 'border-gray-300 text-gray-400'}`}>
-                    {i < step ? '✓' : i + 1}
+                    {i < visibleStep ? '✓' : i + 1}
                   </div>
                   <span className="text-xs font-medium hidden sm:block">{label}</span>
                 </div>
-                {i < STEPS.length - 1 && (
-                  <div className={`flex-1 h-0.5 mx-2 ${i < step ? 'bg-blue-600' : 'bg-gray-200'}`} />
+                {i < visibleSteps.length - 1 && (
+                  <div className={`flex-1 h-0.5 mx-2 ${i < visibleStep ? 'bg-blue-600' : 'bg-gray-200'}`} />
                 )}
               </div>
             ))}
@@ -157,7 +214,6 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
                 <p className="text-xs text-gray-400 mt-1">Si el huésped ya existe, se vincula automáticamente</p>
               </div>
 
-              {/* Acompañantes */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Acompañantes (opcional)</label>
                 {(form.companions || []).map((c, i) => (
@@ -180,10 +236,7 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
                     value={newCompanion.documentNumber || ''}
                     onChange={e => setNewCompanion(c => ({ ...c, documentNumber: e.target.value }))}
                   />
-                  <button
-                    onClick={addCompanion}
-                    className="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 font-medium"
-                  >
+                  <button onClick={addCompanion} className="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 font-medium">
                     + Add
                   </button>
                 </div>
@@ -191,71 +244,126 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
             </>
           )}
 
-          {/* Step 1: Habitación */}
+          {/* Step 1: Tipo + Habitación específica */}
           {step === 1 && (
             <>
+              {/* Tipo de habitación */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Tipo de habitación <span className="text-red-500">*</span>
                 </label>
                 <div className="grid grid-cols-1 gap-2">
-                  {roomTypes.map(rt => (
-                    <button
-                      key={rt.id}
-                      onClick={() => set('roomTypeId', rt.id)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-colors
-                        ${form.roomTypeId === rt.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'}`}
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900 text-sm">{rt.name}</div>
-                        <div className="text-xs text-gray-500">{rt.description}</div>
-                      </div>
-                      <div className="text-xs text-gray-400">Cap. {rt.capacity}</div>
-                      {form.roomTypeId === rt.id && (
-                        <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
+                  {roomTypes.map(rt => {
+                    const count = allRooms.filter(r => r.roomTypeId === rt.id).length;
+                    return (
+                      <button
+                        key={rt.id}
+                        onClick={() => {
+                          set('roomTypeId', rt.id);
+                          set('roomId', undefined); // resetear habitación al cambiar tipo
+                        }}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-colors
+                          ${form.roomTypeId === rt.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'}`}
+                      >
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900 text-sm">{rt.name}</div>
+                          <div className="text-xs text-gray-500">{rt.description}</div>
                         </div>
-                      )}
-                    </button>
-                  ))}
+                        <div className="text-xs text-gray-400">{count} disp.</div>
+                        {form.roomTypeId === rt.id && (
+                          <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tipo de ocupante <span className="text-red-500">*</span>
-                </label>
-                <div className="grid grid-cols-1 gap-2">
-                  {(Object.entries(OCCUPANT_LABELS) as [OccupantType, string][]).map(([val, label]) => (
-                    <button
-                      key={val}
-                      onClick={() => {
-                        set('occupantType', val);
-                        if (val === 'INDIVIDUAL') set('numberOfGuests', 1);
-                        if (val === 'PAREJA') set('numberOfGuests', 2);
-                      }}
-                      className={`px-4 py-3 rounded-xl border-2 text-left text-sm font-medium transition-colors
-                        ${form.occupantType === val
-                          ? 'border-blue-500 bg-blue-50 text-blue-800'
-                          : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              {/* Habitación específica */}
+              {form.roomTypeId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Habitación específica <span className="text-red-500">*</span>
+                  </label>
+
+                  {roomsForType.length === 0 ? (
+                    <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                      ⚠️ No hay habitaciones disponibles de este tipo
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {Object.entries(roomsByFloor)
+                        .sort(([a], [b]) => Number(a) - Number(b))
+                        .map(([floor, rooms]) => (
+                          <div key={floor}>
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                              Piso {floor}
+                            </p>
+                            <div className="grid grid-cols-4 gap-2">
+                              {rooms.map(room => (
+                                <button
+                                  key={room.id}
+                                  onClick={() => set('roomId', room.id)}
+                                  className={`py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-colors
+                                    ${form.roomId === room.id
+                                      ? 'border-blue-500 bg-blue-500 text-white'
+                                      : 'border-gray-200 text-gray-700 hover:border-blue-300 hover:bg-blue-50'}`}
+                                >
+                                  {room.roomNumber}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {selectedRoom && (
+                    <div className="mt-3 bg-blue-50 rounded-xl px-4 py-2 text-sm text-blue-700">
+                      ✓ Hab. <span className="font-semibold">{selectedRoom.roomNumber}</span> — Piso {selectedRoom.floor} — {selectedRoom.roomTypeName}
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
+
+              {/* Tipo de ocupante */}
+              {form.roomTypeId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Tipo de ocupante <span className="text-red-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {(Object.entries(OCCUPANT_LABELS) as [OccupantType, string][]).map(([val, label]) => (
+                      <button
+                        key={val}
+                        onClick={() => {
+                          set('occupantType', val);
+                          if (val === 'INDIVIDUAL') set('numberOfGuests', 1);
+                          if (val === 'PAREJA') set('numberOfGuests', 2);
+                        }}
+                        className={`px-4 py-3 rounded-xl border-2 text-left text-sm font-medium transition-colors
+                          ${form.occupantType === val
+                            ? 'border-blue-500 bg-blue-50 text-blue-800'
+                            : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {form.occupantType === 'MULTIPLE_PERSON' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Número de huéspedes</label>
                   <input
-                    type="number"
-                    min={3}
-                    max={10}
+                    type="number" min={3} max={10}
                     className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={form.numberOfGuests || 3}
                     onChange={e => set('numberOfGuests', Number(e.target.value))}
@@ -265,8 +373,8 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
             </>
           )}
 
-          {/* Step 2: Fechas */}
-          {step === 2 && (
+          {/* Step 2: Fechas (solo para nueva reserva) */}
+          {step === 2 && !isCambioHabitacion && (
             <>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -317,9 +425,7 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
                   <input
-                    type="number"
-                    min={0}
-                    step={1000}
+                    type="number" min={0} step={1000}
                     className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0"
                     value={form.depositAmount || ''}
@@ -342,22 +448,34 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
           )}
 
           {/* Step 3: Confirmar */}
-          {step === 3 && (
+          {((step === 3 && !isCambioHabitacion) || (step === 2 && isCambioHabitacion)) && (
             <div className="space-y-4">
               <div className="bg-gray-50 rounded-xl p-4 space-y-3 text-sm">
-                <Row label="Huésped" value={`${form.firstName} ${form.lastName || ''}`.trim()} />
-                <Row label="Teléfono" value={form.phone || ''} />
-                <Row label="Tipo habitación" value={roomTypes.find(r => r.id === form.roomTypeId)?.name || ''} />
-                <Row label="Ocupante" value={form.occupantType ? OCCUPANT_LABELS[form.occupantType] : ''} />
-                <Row label="Huéspedes" value={String(form.numberOfGuests)} />
-                <Row label="Check-in" value={form.checkInDate || ''} />
-                <Row label="Check-out" value={form.checkOutDate || ''} />
-                <Row label="Noches" value={String(nights)} />
-                {form.approximateArrivalTime && <Row label="Llegada aprox." value={form.approximateArrivalTime} />}
-                {form.depositAmount ? <Row label="Depósito" value={formatCurrency(form.depositAmount)} /> : null}
-                {form.companions?.length ? (
-                  <Row label="Acompañantes" value={form.companions.map(c => c.name).join(', ')} />
-                ) : null}
+                {isCambioHabitacion ? (
+                  <>
+                    <Row label="Reserva" value={reservaExistente.reservationNumber} />
+                    <Row label="Huésped" value={reservaExistente.guestName} />
+                    <Row label="Habitación anterior" value={reservaExistente.roomNumber || 'Sin asignar'} />
+                    <Row label="Nueva habitación" value={selectedRoom?.roomNumber || '—'} />
+                    <Row label="Tipo" value={selectedRoomType?.name || '—'} />
+                  </>
+                ) : (
+                  <>
+                    <Row label="Huésped" value={`${form.firstName} ${form.lastName || ''}`.trim()} />
+                    <Row label="Teléfono" value={form.phone || ''} />
+                    <Row label="Tipo habitación" value={selectedRoomType?.name || ''} />
+                    <Row label="Habitación" value={selectedRoom?.roomNumber || '—'} />
+                    <Row label="Ocupante" value={form.occupantType ? OCCUPANT_LABELS[form.occupantType] : ''} />
+                    <Row label="Check-in" value={form.checkInDate || ''} />
+                    <Row label="Check-out" value={form.checkOutDate || ''} />
+                    <Row label="Noches" value={String(nights)} />
+                    {form.approximateArrivalTime && <Row label="Llegada aprox." value={form.approximateArrivalTime} />}
+                    {form.depositAmount ? <Row label="Depósito" value={formatCurrency(form.depositAmount)} /> : null}
+                    {form.companions?.length ? (
+                      <Row label="Acompañantes" value={form.companions.map(c => c.name).join(', ')} />
+                    ) : null}
+                  </>
+                )}
               </div>
 
               {error && (
@@ -372,30 +490,43 @@ export default function NuevaReservaModal({ onClose, onCreada }: Props) {
         {/* Footer */}
         <div className="px-6 py-4 border-t flex justify-between flex-shrink-0">
           <button
-            onClick={() => step === 0 ? onClose() : setStep(s => s - 1)}
+            onClick={() => {
+              if (step === (isCambioHabitacion ? 1 : 0)) {
+                onClose();
+              } else {
+                setStep(s => s - 1);
+              }
+            }}
             className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
           >
-            {step === 0 ? 'Cancelar' : '← Atrás'}
+            {step === (isCambioHabitacion ? 1 : 0) ? 'Cancelar' : '← Atrás'}
           </button>
 
-          {step < 3 ? (
-            <button
-              onClick={() => setStep(s => s + 1)}
-              disabled={!canNext()}
-              className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Siguiente →
-            </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={mutation.isPending}
-              className="px-5 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 flex items-center gap-2"
-            >
-              {mutation.isPending && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-              {mutation.isPending ? 'Creando...' : '✓ Crear reserva'}
-            </button>
-          )}
+          {/* Determinar si es el último paso */}
+          {(() => {
+            const lastStep = isCambioHabitacion ? 2 : 3;
+            if (step < lastStep) {
+              return (
+                <button
+                  onClick={() => setStep(s => s + 1)}
+                  disabled={!canNext()}
+                  className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Siguiente →
+                </button>
+              );
+            }
+            return (
+              <button
+                onClick={handleSubmit}
+                disabled={isPending}
+                className="px-5 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 flex items-center gap-2"
+              >
+                {isPending && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {isPending ? 'Guardando...' : (isCambioHabitacion ? '✓ Cambiar habitación' : '✓ Crear reserva')}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>

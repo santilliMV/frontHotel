@@ -14,8 +14,9 @@ export interface CreateReservationDTO {
   lastName?: string;
   phone: string;
   roomTypeId: string;
-  checkInDate: string;       // 'YYYY-MM-DD'
-  checkOutDate: string;      // 'YYYY-MM-DD'
+  roomId?: string;
+  checkInDate: string;
+  checkOutDate: string;
   numberOfGuests: number;
   occupantType: OccupantType;
   approximateArrivalTime?: string;
@@ -33,6 +34,7 @@ export interface ReservationResponse {
   guestHasObservations: boolean;
   roomTypeId: string;
   roomTypeName: string;
+  roomNumber: string | null;
   checkInDate: string;
   checkOutDate: string;
   numberOfNights: number;
@@ -52,6 +54,9 @@ export interface ReservationResponse {
 }
 
 export const reservationsApi = {
+  getAll: () =>
+  apiClient.get<ReservationResponse[]>('/reservations/all').then(r => r.data),
+
   create: (data: CreateReservationDTO) =>
     apiClient.post<ReservationResponse>('/reservations', data).then(r => r.data),
 
@@ -69,6 +74,9 @@ export const reservationsApi = {
 
   getTodayCheckOuts: () =>
     apiClient.get<ReservationResponse[]>('/reservations/today/check-outs').then(r => r.data),
+
+  changeRoom: (reservationId: string, roomId: string) =>
+    apiClient.patch<ReservationResponse>(`/reservations/${reservationId}/room`, { roomId }).then(r => r.data),
 
   cancel: (id: string) =>
     apiClient.delete(`/reservations/${id}/cancel`).then(r => r.data),

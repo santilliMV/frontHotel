@@ -51,6 +51,7 @@ export interface ReservationResponse {
   createdBy: string;
   createdAt: string | null;
   companions: ReservationCompanion[];
+  roomId: string | null;
 }
 
 export const reservationsApi = {

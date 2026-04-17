@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { updateRoomStatus } from '../api/dashboard';
-import  apiClient  from '../api/client';
+import apiClient from '../api/client';
 import { reservationsApi } from '../api/reservations';
 import type { ReservationResponse } from '../api/reservations';
 import type { RoomStatus } from '../types';
@@ -16,6 +16,7 @@ interface RoomByDate {
   roomNumber: string;
   floor: number;
   roomTypeName: string;
+  roomTypeId?: string;
   status: RoomStatus;
   statusLabel: string;
   guestName?: string;
@@ -127,6 +128,31 @@ export default function Planilla() {
     } catch { /* silencioso */ }
   };
 
+  /**
+   * Navega a /checkin pasando los datos de la reserva como state.
+   * CheckIn los usa para pre-rellenar el formulario.
+   */
+  const handleCheckin = async (room: RoomByDate, reservaId: string) => {
+  try {
+    const reserva = await reservationsApi.getById(reservaId);
+    navigate('/checkin', {
+      state: {
+        reservationId: reserva.id,  // ✅ agrega esto
+        prefill: {
+          roomTypeId:     reserva.roomTypeId,
+          roomId:         room.id,
+          checkInDate:    reserva.checkInDate,
+          checkOutDate:   reserva.checkOutDate,
+          numberOfGuests: reserva.numberOfGuests,
+          occupantType:   reserva.occupantType,
+        },
+      },
+    });
+  } catch {
+    navigate('/checkin');
+  }
+};
+
   if (isLoading) return (
     <div className="flex items-center justify-center h-full">
       <p className="text-slate-500 text-sm">Cargando habitaciones...</p>
@@ -228,7 +254,7 @@ export default function Planilla() {
                 room={room}
                 isToday={isToday}
                 onChangeStatus={() => { setSelectedRoom(room); setShowStatusModal(true); }}
-                onCheckin={reservaId => navigate(`/checkin?reservaId=${reservaId}`)}
+                onCheckin={(reservaId) => handleCheckin(room, reservaId)}
                 onDirectCheckin={() => navigate('/checkin')}
                 onMover={handleMover}
               />
@@ -311,12 +337,12 @@ function RoomRow({
   const isDirty     = room.status === 'DIRTY';
   const isAvailable = room.status === 'AVAILABLE';
 
-  const guestName = isOccupied ? room.guestName      : (isReserved ? room.preAssignedGuestName        : '');
-  const checkIn   = isOccupied ? room.checkInDate     : (isReserved ? room.preAssignedCheckIn          : '');
-  const checkOut  = isOccupied ? room.checkOutDate    : (isReserved ? room.preAssignedCheckOut         : '');
-  const nights    = isOccupied ? room.numberOfNights  : undefined;
-  const resNum    = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber : '');
-  const reservaId = isOccupied ? room.reservationId   : (isReserved ? room.preAssignedReservationId    : undefined);
+  const guestName = isOccupied ? room.guestName       : (isReserved ? room.preAssignedGuestName          : '');
+  const checkIn   = isOccupied ? room.checkInDate      : (isReserved ? room.preAssignedCheckIn            : '');
+  const checkOut  = isOccupied ? room.checkOutDate     : (isReserved ? room.preAssignedCheckOut           : '');
+  const nights    = isOccupied ? room.numberOfNights   : undefined;
+  const resNum    = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber  : '');
+  const reservaId = isOccupied ? room.reservationId    : (isReserved ? room.preAssignedReservationId      : undefined);
 
   return (
     <tr className={`hover:bg-slate-50 transition-colors ${STATUS_ROW[room.status]}`}>

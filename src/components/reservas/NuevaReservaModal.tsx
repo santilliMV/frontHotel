@@ -2,9 +2,15 @@ import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { reservationsApi } from '../../api/reservations';
 import type { CreateReservationDTO, OccupantType, ReservationCompanion, ReservationResponse } from '../../api/reservations';
-import  apiClient  from '../../api/client';
+import apiClient from '../../api/client';
 import { formatCurrency } from '../../utils/format';
-
+const toLocalDateStr = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const todayLocal = () => toLocalDateStr(new Date());
 interface RoomType {
   id: string;
   name: string;
@@ -29,8 +35,8 @@ interface Props {
 }
 
 const OCCUPANT_LABELS: Record<OccupantType, string> = {
-  INDIVIDUAL:      'Individual (1 persona)',
-  PAREJA:          'Pareja (2 personas)',
+  INDIVIDUAL: 'Individual (1 persona)',
+  PAREJA: 'Pareja (2 personas)',
   MULTIPLE_PERSON: 'Múltiple (3+ personas)',
 };
 
@@ -96,10 +102,10 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
     setForm(f => ({ ...f, [key]: value }));
 
   const nights = form.checkInDate && form.checkOutDate
-    ? Math.max(0, Math.ceil(
-        (new Date(form.checkOutDate).getTime() - new Date(form.checkInDate).getTime())
-        / (1000 * 60 * 60 * 24)
-      ))
+    ? Math.max(0, Math.round(
+      (new Date(form.checkOutDate + 'T12:00:00').getTime() - new Date(form.checkInDate + 'T12:00:00').getTime())
+      / 86400000
+    ))
     : 0;
 
   const canNext = () => {
@@ -158,8 +164,8 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
                 <div className={`flex items-center gap-1.5 ${i <= visibleStep ? 'text-blue-600' : 'text-gray-400'}`}>
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2
                     ${i < visibleStep ? 'bg-blue-600 border-blue-600 text-white'
-                    : i === visibleStep ? 'border-blue-600 text-blue-600'
-                    : 'border-gray-300 text-gray-400'}`}>
+                      : i === visibleStep ? 'border-blue-600 text-blue-600'
+                        : 'border-gray-300 text-gray-400'}`}>
                     {i < visibleStep ? '✓' : i + 1}
                   </div>
                   <span className="text-xs font-medium hidden sm:block">{label}</span>
@@ -384,7 +390,7 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
                   <input
                     type="date"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    min={new Date().toISOString().split('T')[0]}
+                    min={todayLocal()}
                     value={form.checkInDate || ''}
                     onChange={e => set('checkInDate', e.target.value)}
                   />
@@ -396,7 +402,7 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
                   <input
                     type="date"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    min={form.checkInDate || new Date().toISOString().split('T')[0]}
+                    min={form.checkInDate || todayLocal()}
                     value={form.checkOutDate || ''}
                     onChange={e => set('checkOutDate', e.target.value)}
                   />

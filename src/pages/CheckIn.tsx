@@ -40,11 +40,19 @@ const OCCUPANT_LABELS: Record<string, string> = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const isEarlyHour = () => new Date().getHours() < 7;
-const today    = () => new Date().toISOString().split('T')[0];
-const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; };
+const toLocalDateStr = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const today    = () => toLocalDateStr(new Date());
+const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); return toLocalDateStr(d); };
 const fmtCOP   = (n: number) => '$' + Math.round(n).toLocaleString('es-CO');
 const nightCount = (ci: string, co: string) =>
-  !ci || !co ? 0 : Math.max(0, Math.round((new Date(co).getTime() - new Date(ci).getTime()) / 86400000));
+  !ci || !co ? 0 : Math.max(0, Math.round(
+    (new Date(co + 'T12:00:00').getTime() - new Date(ci + 'T12:00:00').getTime()) / 86400000
+  ));
 
 function validateReservationPayload(payload: {
   firstName?: string; phone?: string; roomTypeId?: string;

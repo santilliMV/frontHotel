@@ -35,27 +35,27 @@ interface RoomByDate {
 }
 
 const STATUS_STYLES: Record<RoomStatus, string> = {
-  AVAILABLE:   'bg-emerald-100 text-emerald-700 border-emerald-200',
-  OCCUPIED:    'bg-blue-100 text-blue-700 border-blue-200',
-  DIRTY:       'bg-amber-100 text-amber-700 border-amber-200',
+  AVAILABLE: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  OCCUPIED: 'bg-blue-100 text-blue-700 border-blue-200',
+  DIRTY: 'bg-amber-100 text-amber-700 border-amber-200',
   MAINTENANCE: 'bg-red-100 text-red-700 border-red-200',
-  RESERVED:    'bg-purple-100 text-purple-700 border-purple-200',
+  RESERVED: 'bg-purple-100 text-purple-700 border-purple-200',
 };
 
 const STATUS_ROW: Record<RoomStatus, string> = {
-  AVAILABLE:   '',
-  OCCUPIED:    'bg-blue-50',
-  DIRTY:       'bg-amber-50',
+  AVAILABLE: '',
+  OCCUPIED: 'bg-blue-50',
+  DIRTY: 'bg-amber-50',
   MAINTENANCE: 'bg-red-50',
-  RESERVED:    'bg-purple-50',
+  RESERVED: 'bg-purple-50',
 };
 
 const STATUS_LABELS: Record<RoomStatus, string> = {
-  AVAILABLE:   'Disponible',
-  OCCUPIED:    'Ocupada',
-  DIRTY:       'Sucia',
+  AVAILABLE: 'Disponible',
+  OCCUPIED: 'Ocupada',
+  DIRTY: 'Sucia',
   MAINTENANCE: 'Mantenimiento',
-  RESERVED:    'Reservada',
+  RESERVED: 'Reservada',
 };
 
 // ─── Helpers fecha ────────────────────────────────────────────────────────────
@@ -85,21 +85,21 @@ function formatDayLabel(d: Date): string {
 
 export default function Planilla() {
   const queryClient = useQueryClient();
-  const navigate    = useNavigate();
-  const todayDate   = new Date();
+  const navigate = useNavigate();
+  const todayDate = new Date();
 
-  const [currentDate, setCurrentDate]        = useState<Date>(todayDate);
-  const [selectedRoom, setSelectedRoom]       = useState<RoomByDate | null>(null);
+  const [currentDate, setCurrentDate] = useState<Date>(todayDate);
+  const [selectedRoom, setSelectedRoom] = useState<RoomByDate | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [filterStatus, setFilterStatus]       = useState<RoomStatus | 'ALL'>('ALL');
-  const [reservaCambio, setReservaCambio]     = useState<ReservationResponse | null>(null);
+  const [filterStatus, setFilterStatus] = useState<RoomStatus | 'ALL'>('ALL');
+  const [reservaCambio, setReservaCambio] = useState<ReservationResponse | null>(null);
 
   const dateStr = toDateStr(currentDate);
   const isToday = dateStr === toDateStr(todayDate);
 
   const { data: rooms = [], isLoading, isError } = useQuery<RoomByDate[]>({
     queryKey: ['rooms-by-date', dateStr],
-    queryFn:  () => apiClient.get(`/rooms/by-date?date=${dateStr}`).then(r => r.data),
+    queryFn: () => apiClient.get(`/rooms/by-date?date=${dateStr}`).then(r => r.data),
     refetchInterval: 30000,
   });
 
@@ -133,25 +133,28 @@ export default function Planilla() {
    * CheckIn los usa para pre-rellenar el formulario.
    */
   const handleCheckin = async (room: RoomByDate, reservaId: string) => {
-  try {
-    const reserva = await reservationsApi.getById(reservaId);
-    navigate('/checkin', {
-      state: {
-        reservationId: reserva.id,  // ✅ agrega esto
-        prefill: {
-          roomTypeId:     reserva.roomTypeId,
-          roomId:         room.id,
-          checkInDate:    reserva.checkInDate,
-          checkOutDate:   reserva.checkOutDate,
-          numberOfGuests: reserva.numberOfGuests,
-          occupantType:   reserva.occupantType,
+    try {
+      const reserva = await reservationsApi.getById(reservaId);
+      navigate('/checkin', {
+        state: {
+          reservationId: reserva.id,  // ✅ agrega esto
+          prefill: {
+            roomTypeId: reserva.roomTypeId,
+            roomId: room.id,
+            checkInDate: reserva.checkInDate,
+            checkOutDate: reserva.checkOutDate,
+            numberOfGuests: reserva.numberOfGuests,
+            occupantType: reserva.occupantType,
+          },
         },
-      },
-    });
-  } catch {
-    navigate('/checkin');
-  }
-};
+      });
+    } catch {
+      navigate('/checkin');
+    }
+  };
+  const handleEntregar = (reservaId: string) => {
+    navigate('/checkout', { state: { reservationId: reservaId } });
+  };
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-full">
@@ -219,11 +222,10 @@ export default function Planilla() {
           <button
             key={status}
             onClick={() => setFilterStatus(filterStatus === status ? 'ALL' : status)}
-            className={`rounded-lg border p-3 text-left transition-all ${
-              filterStatus === status
-                ? STATUS_STYLES[status] + ' ring-2 ring-offset-1 ring-slate-400'
-                : 'bg-white border-slate-200 hover:border-slate-300'
-            }`}
+            className={`rounded-lg border p-3 text-left transition-all ${filterStatus === status
+              ? STATUS_STYLES[status] + ' ring-2 ring-offset-1 ring-slate-400'
+              : 'bg-white border-slate-200 hover:border-slate-300'
+              }`}
           >
             <p className="text-2xl font-bold text-slate-800">{counts[status] ?? 0}</p>
             <p className="text-xs text-slate-500 mt-0.5">{STATUS_LABELS[status]}</p>
@@ -257,6 +259,7 @@ export default function Planilla() {
                 onCheckin={(reservaId) => handleCheckin(room, reservaId)}
                 onDirectCheckin={() => navigate('/checkin')}
                 onMover={handleMover}
+                onEntregar={handleEntregar}
               />
             ))}
             {filtered.length === 0 && (
@@ -323,7 +326,7 @@ export default function Planilla() {
 // ─── Fila ─────────────────────────────────────────────────────────────────────
 
 function RoomRow({
-  room, isToday, onChangeStatus, onCheckin, onDirectCheckin, onMover,
+  room, isToday, onChangeStatus, onCheckin, onDirectCheckin, onMover, onEntregar,
 }: {
   room: RoomByDate;
   isToday: boolean;
@@ -331,18 +334,19 @@ function RoomRow({
   onCheckin: (reservaId: string) => void;
   onDirectCheckin: () => void;
   onMover: (reservaId: string) => void;
+  onEntregar: (reservaId: string) => void;
 }) {
-  const isOccupied  = room.status === 'OCCUPIED';
-  const isReserved  = room.status === 'RESERVED';
-  const isDirty     = room.status === 'DIRTY';
+  const isOccupied = room.status === 'OCCUPIED';
+  const isReserved = room.status === 'RESERVED';
+  const isDirty = room.status === 'DIRTY';
   const isAvailable = room.status === 'AVAILABLE';
 
-  const guestName = isOccupied ? room.guestName       : (isReserved ? room.preAssignedGuestName          : '');
-  const checkIn   = isOccupied ? room.checkInDate      : (isReserved ? room.preAssignedCheckIn            : '');
-  const checkOut  = isOccupied ? room.checkOutDate     : (isReserved ? room.preAssignedCheckOut           : '');
-  const nights    = isOccupied ? room.numberOfNights   : undefined;
-  const resNum    = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber  : '');
-  const reservaId = isOccupied ? room.reservationId    : (isReserved ? room.preAssignedReservationId      : undefined);
+  const guestName = isOccupied ? room.guestName : (isReserved ? room.preAssignedGuestName : '');
+  const checkIn = isOccupied ? room.checkInDate : (isReserved ? room.preAssignedCheckIn : '');
+  const checkOut = isOccupied ? room.checkOutDate : (isReserved ? room.preAssignedCheckOut : '');
+  const nights = isOccupied ? room.numberOfNights : undefined;
+  const resNum = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber : '');
+  const reservaId = isOccupied ? room.reservationId : (isReserved ? room.preAssignedReservationId : undefined);
 
   return (
     <tr className={`hover:bg-slate-50 transition-colors ${STATUS_ROW[room.status]}`}>
@@ -356,12 +360,12 @@ function RoomRow({
       </td>
       <td className="px-4 py-3">
         {guestName && <span className="text-slate-700 font-medium block">{guestName}</span>}
-        {resNum    && <span className="text-xs text-purple-600">{resNum}</span>}
+        {resNum && <span className="text-xs text-purple-600">{resNum}</span>}
         {room.guestHasObservations && (
           <span className="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">⚠️</span>
         )}
       </td>
-      <td className="px-4 py-3 text-slate-600 text-xs">{checkIn  ? formatDate(checkIn)  : ''}</td>
+      <td className="px-4 py-3 text-slate-600 text-xs">{checkIn ? formatDate(checkIn) : ''}</td>
       <td className="px-4 py-3 text-slate-600 text-xs">{checkOut ? formatDate(checkOut) : ''}</td>
       <td className="px-4 py-3 text-slate-500 text-xs">{nights ?? ''}</td>
       <td className="px-4 py-3">
@@ -374,12 +378,20 @@ function RoomRow({
               Entrada
             </button>
           )}
-          {isToday && (isOccupied || isDirty) && (
+          {isToday && isOccupied && reservaId && (
+            <button
+              onClick={() => onEntregar(reservaId)}
+              className="text-xs text-white bg-amber-600 hover:bg-amber-500 rounded-lg px-3 py-1.5"
+            >
+              Entregar
+            </button>
+          )}
+          {isToday && isDirty && (
             <button
               onClick={onChangeStatus}
               className="text-xs text-slate-600 border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-100"
             >
-              {isOccupied ? 'Entregar' : 'Limpia'}
+              Limpia
             </button>
           )}
           {reservaId && (isReserved || isOccupied) && (

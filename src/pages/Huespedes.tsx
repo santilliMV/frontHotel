@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { guestsApi } from '../api/hotel-api';
-import type { GuestResponse, GuestRequest, DocumentType } from '../api/hotel-api';
+import type { GuestResponse, GuestRequest } from '../api/hotel-api';
 import { COLOMBIA_CITIES, COUNTRIES, DOC_TYPES } from '../constants';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -30,37 +30,40 @@ function GuestForm({
   const set = (k: keyof GuestRequest, v: string) =>
     setForm((f) => ({ ...f, [k]: v || undefined }));
 
+  const inputCls = "w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white placeholder:text-slate-400";
+  const labelCls = "block text-xs font-medium text-slate-500 mb-1";
+
   return (
-    <div className="guest-form">
+    <div className="flex flex-col gap-4">
       {/* Fila 1: Nombre + Apellido */}
-      <div className="fg-grid-2">
-        <div className="fg-field required">
-          <label>Nombre *</label>
-          <input className="fg-input" placeholder="Nombre" autoFocus
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Nombre *</label>
+          <input className={inputCls} placeholder="Nombre" autoFocus
             value={form.firstName}
             onChange={(e) => set('firstName', e.target.value)} />
         </div>
-        <div className="fg-field">
-          <label>Apellido</label>
-          <input className="fg-input" placeholder="Apellido"
+        <div>
+          <label className={labelCls}>Apellido</label>
+          <input className={inputCls} placeholder="Apellido"
             value={form.lastName ?? ''}
             onChange={(e) => set('lastName', e.target.value)} />
         </div>
       </div>
 
       {/* Fila 2: Teléfono */}
-      <div className="fg-field required">
-        <label>Teléfono *</label>
-        <input className="fg-input" placeholder="3101234567"
+      <div>
+        <label className={labelCls}>Teléfono *</label>
+        <input className={inputCls} placeholder="3101234567"
           value={form.phone}
           onChange={(e) => set('phone', e.target.value)} />
       </div>
 
       {/* Fila 3: Tipo doc + Número doc */}
-      <div className="fg-grid-2">
-        <div className="fg-field">
-          <label>Tipo de documento</label>
-          <select className="fg-input"
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Tipo de documento</label>
+          <select className={inputCls}
             value={form.documentType ?? ''}
             onChange={(e) => set('documentType', e.target.value)}>
             <option value="">— Seleccionar —</option>
@@ -69,19 +72,19 @@ function GuestForm({
             ))}
           </select>
         </div>
-        <div className="fg-field">
-          <label>Número de documento</label>
-          <input className="fg-input" placeholder="123456789"
+        <div>
+          <label className={labelCls}>Número de documento</label>
+          <input className={inputCls} placeholder="123456789"
             value={form.documentNumber ?? ''}
             onChange={(e) => set('documentNumber', e.target.value)} />
         </div>
       </div>
 
       {/* Fila 4: País + Ciudad */}
-      <div className="fg-grid-2">
-        <div className="fg-field">
-          <label>País</label>
-          <select className="fg-input"
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>País</label>
+          <select className={inputCls}
             value={form.country ?? 'Colombia'}
             onChange={(e) => set('country', e.target.value)}>
             {COUNTRIES.map((c) => (
@@ -89,9 +92,9 @@ function GuestForm({
             ))}
           </select>
         </div>
-        <div className="fg-field">
-          <label>Ciudad</label>
-          <select className="fg-input"
+        <div>
+          <label className={labelCls}>Ciudad</label>
+          <select className={inputCls}
             value={form.city ?? ''}
             onChange={(e) => set('city', e.target.value)}>
             <option value="">— Seleccionar —</option>
@@ -103,49 +106,62 @@ function GuestForm({
       </div>
 
       {/* Fila 5: Dirección */}
-      <div className="fg-field">
-        <label>Dirección</label>
-        <input className="fg-input" placeholder="Calle 123 #45-67"
+      <div>
+        <label className={labelCls}>Dirección</label>
+        <input className={inputCls} placeholder="Calle 123 #45-67"
           value={form.address ?? ''}
           onChange={(e) => set('address', e.target.value)} />
       </div>
 
       {/* Fila 6: Ocupación + Placa */}
-      <div className="fg-grid-2">
-        <div className="fg-field">
-          <label>Ocupación</label>
-          <input className="fg-input" placeholder="Comerciante"
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Ocupación</label>
+          <input className={inputCls} placeholder="Comerciante"
             value={form.occupation ?? ''}
             onChange={(e) => set('occupation', e.target.value)} />
         </div>
-        <div className="fg-field">
-          <label>Placa vehículo</label>
-          <input className="fg-input" placeholder="ABC-123"
+        <div>
+          <label className={labelCls}>Placa vehículo</label>
+          <input className={inputCls} placeholder="ABC-123"
             value={form.vehiclePlate ?? ''}
             onChange={(e) => set('vehiclePlate', e.target.value)} />
         </div>
       </div>
 
       {/* Observaciones */}
-      <div className="fg-field obs-field">
-        <label>⚠ Observaciones</label>
-        <textarea className="fg-input fg-textarea" rows={3}
+      <div>
+        <label className={labelCls}>⚠ Observaciones</label>
+        <textarea
+          className={`${inputCls} resize-none`}
+          rows={3}
           placeholder="Ej: No arrendar, cliente problemático…"
           value={form.observations ?? ''}
-          onChange={(e) => set('observations', e.target.value)} />
+          onChange={(e) => set('observations', e.target.value)}
+        />
         {form.observations && (
-          <span className="obs-warn">Este huésped quedará marcado con alerta</span>
+          <p className="mt-1 text-xs text-amber-600">Este huésped quedará marcado con alerta</p>
         )}
       </div>
 
-      {error && <div className="fg-error">⚠ {error}</div>}
+      {error && (
+        <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          ⚠ {error}
+        </div>
+      )}
 
-      <div className="fg-actions">
-        <button className="btn-secondary" onClick={onCancel} disabled={saving}>Cancelar</button>
+      <div className="flex justify-end gap-2 pt-1">
         <button
-          className="btn-primary"
+          onClick={onCancel}
+          disabled={saving}
+          className="px-4 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          Cancelar
+        </button>
+        <button
           onClick={() => onSave(form)}
           disabled={saving || !form.firstName || !form.phone}
+          className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
         >
           {saving ? '⟳ Guardando…' : '✓ Guardar huésped'}
         </button>
@@ -163,34 +179,70 @@ function GuestCard({ guest, onEdit, onSelect, selectLabel }: {
   selectLabel?: string;
 }) {
   const initials = (guest.firstName[0] + (guest.lastName?.[0] ?? '')).toUpperCase();
+
   return (
-    <div className={`gc ${guest.hasObservations ? 'gc-obs' : ''}`}>
-      <div className="gc-avatar" style={{ background: guest.hasObservations ? '#7f1d1d' : '#1e1e35' }}>
+    <div className={`bg-white rounded-xl border px-4 py-3.5 flex items-start gap-4 transition-colors hover:border-slate-300 ${
+      guest.hasObservations ? 'border-red-200 bg-red-50/30' : 'border-slate-200'
+    }`}>
+      {/* Avatar */}
+      <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${
+        guest.hasObservations ? 'bg-red-700' : 'bg-slate-800'
+      }`}>
         {initials}
       </div>
-      <div className="gc-body">
-        <div className="gc-top">
-          <span className="gc-name">{guest.fullName}</span>
-          {guest.hasObservations && <span className="badge-obs">⚠ Obs.</span>}
-          {guest.autoCreated && <span className="badge-auto">Auto</span>}
+
+      {/* Body */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className="text-sm font-semibold text-slate-800">{guest.fullName}</span>
+          {guest.hasObservations && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
+              ⚠ Obs.
+            </span>
+          )}
+          {guest.autoCreated && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+              Auto
+            </span>
+          )}
         </div>
-        <div className="gc-meta">
+
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
           <span>📞 {guest.phone}</span>
-          {guest.documentNumber && <span>🪪 {guest.documentType} {guest.documentNumber}</span>}
-          {guest.city && <span>📍 {guest.city}{guest.country && guest.country !== 'Colombia' ? `, ${guest.country}` : ''}</span>}
-          {guest.lastStayDate && <span>🏨 Última visita: {fmt(guest.lastStayDate)}</span>}
+          {guest.documentNumber && (
+            <span>🪪 {guest.documentType} {guest.documentNumber}</span>
+          )}
+          {guest.city && (
+            <span>📍 {guest.city}{guest.country && guest.country !== 'Colombia' ? `, ${guest.country}` : ''}</span>
+          )}
+          {guest.lastStayDate && (
+            <span>🏨 Última visita: {fmt(guest.lastStayDate)}</span>
+          )}
         </div>
+
         {guest.hasObservations && (
-          <div className="gc-obs-text">"{guest.observations}"</div>
+          <div className="mt-2 text-xs text-red-600 italic bg-red-50 border border-red-100 rounded-lg px-3 py-1.5 border-l-2 border-l-red-400">
+            "{guest.observations}"
+          </div>
         )}
       </div>
-      <div className="gc-btns">
+
+      {/* Botones */}
+      <div className="flex flex-col gap-1.5 flex-shrink-0">
         {onSelect && (
-          <button className="btn-select" onClick={() => onSelect(guest)}>
+          <button
+            onClick={() => onSelect(guest)}
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
+          >
             {selectLabel ?? 'Seleccionar'}
           </button>
         )}
-        <button className="btn-edit" onClick={() => onEdit(guest)}>Editar</button>
+        <button
+          onClick={() => onEdit(guest)}
+          className="px-3 py-1.5 border border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-700 text-xs rounded-lg transition-colors"
+        >
+          Editar
+        </button>
       </div>
     </div>
   );
@@ -273,185 +325,123 @@ export default function Huespedes() {
   const normal  = guests.filter((g) => !g.hasObservations);
 
   return (
-    <>
-      <style>{`
-        .hp { min-height:100vh; background:#0f1117; padding:32px 24px;
-          font-family:'DM Sans','Segoe UI',sans-serif; color:#e8e8f0; }
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
 
-        .hp-header { display:flex; align-items:center; justify-content:space-between;
-          margin-bottom:28px; gap:16px; flex-wrap:wrap; }
-        .hp-header-left { display:flex; align-items:center; gap:14px; }
-        .hp-icon { width:48px; height:48px; background:linear-gradient(135deg,#0ea5e9,#6366f1);
-          border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:22px; }
-        .hp-header h1 { font-size:26px; font-weight:700; margin:0; letter-spacing:-.5px; }
-        .hp-header p  { margin:2px 0 0; color:#6b7280; font-size:14px; }
-
-        .hp-search { display:flex; gap:10px; margin-bottom:24px; }
-        .hp-search input { flex:1; padding:12px 16px; background:#16171f;
-          border:1px solid #2a2a3d; border-radius:12px; color:#e8e8f0;
-          font-size:15px; outline:none; transition:border .2s; font-family:inherit; }
-        .hp-search input:focus { border-color:#6366f1; }
-        .hp-search input::placeholder { color:#4b5563; }
-
-        .btn-primary { padding:11px 22px;
-          background:linear-gradient(135deg,#6366f1,#8b5cf6);
-          border:none; border-radius:11px; color:#fff;
-          font-size:14px; font-weight:600; cursor:pointer; transition:opacity .2s; white-space:nowrap; }
-        .btn-primary:hover { opacity:.88; }
-        .btn-primary:disabled { opacity:.45; cursor:not-allowed; }
-        .btn-secondary { padding:11px 20px; background:transparent;
-          border:1px solid #2a2a3d; border-radius:11px; color:#9ca3af;
-          font-size:14px; cursor:pointer; transition:all .2s; }
-        .btn-secondary:hover { border-color:#4b5563; color:#e8e8f0; }
-        .btn-edit { padding:7px 14px; background:transparent;
-          border:1px solid #2a2a3d; border-radius:8px; color:#9ca3af;
-          font-size:13px; cursor:pointer; transition:all .2s; }
-        .btn-edit:hover { border-color:#6366f1; color:#a5b4fc; }
-        .btn-select { padding:7px 16px; background:rgba(99,102,241,.15);
-          border:1px solid rgba(99,102,241,.4); border-radius:8px; color:#a5b4fc;
-          font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
-        .btn-select:hover { background:rgba(99,102,241,.25); }
-
-        .section-lbl { font-size:11px; text-transform:uppercase; letter-spacing:1px;
-          color:#4b5563; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
-        .section-lbl.red { color:#f87171; }
-        .cnt { display:inline-flex; align-items:center; justify-content:center;
-          background:#1e1e35; border:1px solid #3730a3; color:#818cf8;
-          font-size:12px; font-weight:700; width:24px; height:24px; border-radius:6px; }
-
-        .guest-list { display:flex; flex-direction:column; gap:10px; margin-bottom:28px; }
-
-        .gc { background:#16171f; border:1px solid #2a2a3d; border-radius:14px;
-          padding:16px 18px; display:flex; gap:14px; align-items:flex-start; transition:border .2s; }
-        .gc:hover { border-color:#3d3d5c; }
-        .gc-obs { border-color:rgba(239,68,68,.3)!important; background:rgba(239,68,68,.04); }
-        .gc-avatar { width:42px; height:42px; border-radius:12px; flex-shrink:0;
-          display:flex; align-items:center; justify-content:center;
-          font-size:15px; font-weight:700; color:#a5b4fc; }
-        .gc-body { flex:1; min-width:0; }
-        .gc-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
-        .gc-name { font-size:16px; font-weight:600; color:#e8e8f0; }
-        .badge-obs { font-size:11px; font-weight:600; padding:2px 8px;
-          background:rgba(239,68,68,.15); color:#f87171;
-          border-radius:4px; border:1px solid rgba(239,68,68,.3); }
-        .badge-auto { font-size:11px; padding:2px 8px;
-          background:rgba(99,102,241,.1); color:#818cf8;
-          border-radius:4px; border:1px solid rgba(99,102,241,.2); }
-        .gc-meta { display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:#6b7280; }
-        .gc-meta span { white-space:nowrap; }
-        .gc-obs-text { margin-top:8px; font-size:12px; color:#f87171; font-style:italic;
-          background:rgba(239,68,68,.08); padding:6px 10px; border-radius:6px;
-          border-left:2px solid rgba(239,68,68,.4); }
-        .gc-btns { display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
-
-        .empty-state { text-align:center; padding:60px 20px; color:#4b5563; }
-        .empty-state p { font-size:15px; margin:8px 0 20px; }
-        .loading-state { text-align:center; padding:40px; color:#6b7280; font-size:14px; }
-
-        .toast { position:fixed; bottom:24px; right:24px;
-          background:#064e3b; border:1px solid #059669; color:#6ee7b7;
-          padding:12px 20px; border-radius:12px; font-size:14px; font-weight:500;
-          z-index:999; box-shadow:0 4px 20px rgba(0,0,0,.4); animation:slideUp .3s ease; }
-        @keyframes slideUp { from{transform:translateY(16px);opacity:0} to{transform:translateY(0);opacity:1} }
-
-        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.75);
-          backdrop-filter:blur(4px); display:flex; align-items:flex-start;
-          justify-content:center; z-index:100; padding:24px; overflow-y:auto; }
-        .modal-card { background:#16171f; border:1px solid #2a2a3d;
-          border-radius:20px; padding:28px; width:100%; max-width:640px; margin:auto; }
-        .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
-        .modal-title { font-size:18px; font-weight:700; margin:0; }
-        .modal-close { background:none; border:none; color:#6b7280; font-size:22px;
-          cursor:pointer; padding:4px 8px; border-radius:6px; transition:color .2s; }
-        .modal-close:hover { color:#e8e8f0; }
-
-        /* Form */
-        .guest-form { display:flex; flex-direction:column; gap:14px; }
-        .fg-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-        @media(max-width:500px) { .fg-grid-2 { grid-template-columns:1fr; } }
-        .fg-field { display:flex; flex-direction:column; gap:5px; }
-        .fg-field label { font-size:12px; color:#9ca3af; }
-        .fg-input { background:#1a1a2e; border:1px solid #2a2a3d; border-radius:10px;
-          padding:10px 13px; color:#e8e8f0; font-size:14px; outline:none;
-          transition:border .2s; font-family:inherit; width:100%; box-sizing:border-box; }
-        .fg-input:focus { border-color:#6366f1; }
-        select.fg-input { cursor:pointer; }
-        select.fg-input option { background:#1a1a2e; }
-        .fg-textarea { resize:vertical; min-height:72px; }
-        .obs-field { }
-        .obs-warn { font-size:11px; color:#f59e0b; }
-        .fg-error { padding:10px 14px; border-radius:8px;
-          background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3);
-          color:#f87171; font-size:13px; }
-        .fg-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }
-      `}</style>
-
-      <div className="hp">
-        <div className="hp-header">
-          <div className="hp-header-left">
-            <div className="hp-icon">👤</div>
-            <div>
-              <h1>Huéspedes</h1>
-              <p>Registro y consulta de clientes</p>
-            </div>
+        {/* Encabezado */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-800">Huéspedes</h1>
+            <p className="text-sm text-slate-500 mt-0.5">Registro y consulta de clientes</p>
           </div>
-          <button className="btn-primary" onClick={openCreate}>+ Nuevo huésped</button>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <span className="text-base leading-none">+</span>
+            Nuevo huésped
+          </button>
         </div>
 
-        <div className="hp-search">
-          <input placeholder="Buscar por nombre, teléfono o documento…"
-            value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
+        {/* Buscador */}
+        <input
+          className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400"
+          placeholder="Buscar por nombre, teléfono o documento…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
 
-        {loading ? (
-          <div className="loading-state">Cargando huéspedes…</div>
-        ) : guests.length === 0 ? (
-          <div className="empty-state">
-            <p>No se encontraron huéspedes{query ? ` para "${query}"` : ''}.</p>
-            <button className="btn-primary" onClick={openCreate}>+ Registrar huésped</button>
+        {/* Estados */}
+        {loading && (
+          <div className="text-center py-12 text-slate-400 text-sm">Cargando huéspedes…</div>
+        )}
+
+        {!loading && guests.length === 0 && (
+          <div className="text-center py-16">
+            <p className="text-slate-400 text-sm mb-4">
+              {query ? `No se encontraron huéspedes para "${query}".` : 'No hay huéspedes registrados.'}
+            </p>
+            <button
+              onClick={openCreate}
+              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              + Registrar huésped
+            </button>
           </div>
-        ) : (
+        )}
+
+        {!loading && guests.length > 0 && (
           <>
+            {/* Con observaciones */}
             {withObs.length > 0 && (
-              <>
-                <p className="section-lbl red">
-                  ⚠ Con observaciones <span className="cnt">{withObs.length}</span>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-red-500 flex items-center gap-2">
+                  ⚠ Con observaciones
+                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-red-100 text-red-600 border border-red-200 rounded-md">
+                    {withObs.length}
+                  </span>
                 </p>
-                <div className="guest-list">
-                  {withObs.map((g) => <GuestCard key={g.id} guest={g} onEdit={openEdit} />)}
-                </div>
-              </>
+                {withObs.map((g) => (
+                  <GuestCard key={g.id} guest={g} onEdit={openEdit} />
+                ))}
+              </div>
             )}
+
+            {/* Normales */}
             {normal.length > 0 && (
-              <>
-                <p className="section-lbl">
-                  Huéspedes <span className="cnt">{normal.length}</span>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                  Huéspedes
+                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 rounded-md">
+                    {normal.length}
+                  </span>
                 </p>
-                <div className="guest-list">
-                  {normal.map((g) => <GuestCard key={g.id} guest={g} onEdit={openEdit} />)}
-                </div>
-              </>
+                {normal.map((g) => (
+                  <GuestCard key={g.id} guest={g} onEdit={openEdit} />
+                ))}
+              </div>
             )}
           </>
         )}
       </div>
 
+      {/* Modal */}
       {modal !== 'none' && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setModal('none')}>
-          <div className="modal-card">
-            <div className="modal-header">
-              <h2 className="modal-title">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-6 overflow-y-auto"
+          onClick={(e) => e.target === e.currentTarget && setModal('none')}
+        >
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl my-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="text-base font-semibold text-slate-800">
                 {modal === 'create' ? '+ Nuevo huésped' : `Editar: ${editing?.fullName}`}
               </h2>
-              <button className="modal-close" onClick={() => setModal('none')}>×</button>
+              <button
+                onClick={() => setModal('none')}
+                className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+              >
+                ×
+              </button>
             </div>
-            <GuestForm initial={initialForm()} onSave={handleSave}
-              onCancel={() => setModal('none')} saving={saving} error={formError} />
+            <div className="px-6 py-5">
+              <GuestForm
+                initial={initialForm()}
+                onSave={handleSave}
+                onCancel={() => setModal('none')}
+                saving={saving}
+                error={formError}
+              />
+            </div>
           </div>
         </div>
       )}
 
-      {toast && <div className="toast">✓ {toast}</div>}
-    </>
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 bg-emerald-800 border border-emerald-600 text-emerald-100 px-5 py-3 rounded-xl text-sm font-medium shadow-lg z-50">
+          ✓ {toast}
+        </div>
+      )}
+    </div>
   );
 }

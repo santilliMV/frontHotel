@@ -62,6 +62,8 @@ export interface ReservationRequest {
   notes?: string;
   depositAmount?: number;
   companions?: CompanionRequest[];
+  depositMethod?: string;
+  depositPayments?: { method: string; amount: number }[];
 }
 
 export interface CheckInRequest {
@@ -203,6 +205,7 @@ export const roomsApi = {
 
 export const checkInApi = {
   createReservation: async (data: ReservationRequest): Promise<ReservationResponse> => {
+    
     const res = await apiClient.post('/reservations', data);
     return res.data;
   },

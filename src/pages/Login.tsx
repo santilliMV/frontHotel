@@ -17,17 +17,7 @@ export default function Login() {
   setError('');
   setLoading(true);
 
-  // Acceso temporal sin backend
-  if (username === 'admin' && password === 'admin123') {
-    setUser({
-      token: 'fake-token',
-      username: 'admin',
-      fullName: 'Administrador',
-      role: 'ADMIN',
-    });
-    navigate('/');
-    return;
-  }
+
 
   try {
     const res = await client.post('/auth/login', { username, password });

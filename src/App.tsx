@@ -9,6 +9,7 @@ import Reservas from './pages/Reservas';
 import CheckIn from './pages/CheckIn';
 import Huespedes from './pages/Huespedes';
 import CheckOut from './pages/CheckOut';
+import Caja from './pages/Caja';
 
 const queryClient = new QueryClient();
 
@@ -45,7 +46,7 @@ export default function App() {
             <Route path="vitrina" element={<Placeholder title="Vitrina" />} />
             <Route path="toallas" element={<Placeholder title="Toallas" />} />
             <Route path="rato" element={<Placeholder title="Servicio Rato" />} />
-            <Route path="caja" element={<Placeholder title="Caja Diaria" />} />
+            <Route path="caja" element={<Caja />} />
             <Route path="gastos" element={<Placeholder title="Gastos" />} />
             <Route path="/huespedes" element={<Huespedes />} />
             <Route path="observaciones" element={<Placeholder title="Observaciones" />} />

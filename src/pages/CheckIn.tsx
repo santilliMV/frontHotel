@@ -26,11 +26,11 @@ interface PaymentEntry {
 type Step = 'guest' | 'room' | 'companions' | 'payment' | 'confirm' | 'success';
 
 const STEPS: { key: Step; label: string }[] = [
-  { key: 'guest',      label: 'Huésped' },
-  { key: 'room',       label: 'Habitación' },
+  { key: 'guest', label: 'Huésped' },
+  { key: 'room', label: 'Habitación' },
   { key: 'companions', label: 'Acompañantes' },
-  { key: 'payment',    label: 'Pago' },
-  { key: 'confirm',    label: 'Confirmar' },
+  { key: 'payment', label: 'Pago' },
+  { key: 'confirm', label: 'Confirmar' },
 ];
 
 const OCCUPANT_LABELS: Record<string, string> = {
@@ -46,9 +46,9 @@ const toLocalDateStr = (d: Date) => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 };
-const today    = () => toLocalDateStr(new Date());
+const today = () => toLocalDateStr(new Date());
 const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); return toLocalDateStr(d); };
-const fmtCOP   = (n: number) => '$' + Math.round(n).toLocaleString('es-CO');
+const fmtCOP = (n: number) => '$' + Math.round(n).toLocaleString('es-CO');
 const nightCount = (ci: string, co: string) =>
   !ci || !co ? 0 : Math.max(0, Math.round(
     (new Date(co + 'T12:00:00').getTime() - new Date(ci + 'T12:00:00').getTime()) / 86400000
@@ -58,13 +58,13 @@ function validateReservationPayload(payload: {
   firstName?: string; phone?: string; roomTypeId?: string;
   checkInDate?: string; checkOutDate?: string; numberOfGuests?: number; occupantType?: string;
 }): string | null {
-  if (!payload.firstName?.trim())   return 'El huésped debe tener nombre';
-  if (!payload.phone?.trim())        return 'El huésped debe tener teléfono';
-  if (!payload.roomTypeId)           return 'Debes seleccionar un tipo de habitación';
-  if (!payload.checkInDate)          return 'La fecha de entrada es obligatoria';
-  if (!payload.checkOutDate)         return 'La fecha de salida es obligatoria';
+  if (!payload.firstName?.trim()) return 'El huésped debe tener nombre';
+  if (!payload.phone?.trim()) return 'El huésped debe tener teléfono';
+  if (!payload.roomTypeId) return 'Debes seleccionar un tipo de habitación';
+  if (!payload.checkInDate) return 'La fecha de entrada es obligatoria';
+  if (!payload.checkOutDate) return 'La fecha de salida es obligatoria';
   if (!payload.numberOfGuests || payload.numberOfGuests < 1) return 'El número de huéspedes es inválido';
-  if (!payload.occupantType)         return 'El tipo de ocupante es obligatorio';
+  if (!payload.occupantType) return 'El tipo de ocupante es obligatorio';
   return null;
 }
 
@@ -87,7 +87,7 @@ function EarlyModal({ onSelect, onCancel }: {
         <div className="flex flex-col gap-3">
           {[
             { opt: 'PREVIOUS_NIGHT' as const, icon: '📅', label: 'Noche anterior', sub: dn(prev) },
-            { opt: 'CURRENT_NIGHT'  as const, icon: '🌅', label: 'Noche actual',   sub: dn(now)  },
+            { opt: 'CURRENT_NIGHT' as const, icon: '🌅', label: 'Noche actual', sub: dn(now) },
           ].map(({ opt, icon, label, sub }) => (
             <button key={opt}
               onClick={() => onSelect(opt)}
@@ -124,10 +124,10 @@ function SuccessScreen({ result, payments, totalPaid, onReset }: {
         <div className="text-sm text-slate-500 mb-4">{result.roomTypeName} · Piso {result.floor}</div>
         <div className="border-t border-slate-200 pt-3 space-y-2">
           {[
-            ['Huésped',     result.guestName],
-            ['Teléfono',    result.guestPhone],
-            ['Reserva',     result.reservationNumber],
-            ['Toallas',     `${result.towelsDelivered} 🛁`],
+            ['Huésped', result.guestName],
+            ['Teléfono', result.guestPhone],
+            ['Reserva', result.reservationNumber],
+            ['Toallas', `${result.towelsDelivered} 🛁`],
             ['Hora entrada', new Date(result.checkInDateTime).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })],
             ...(result.isEarlyCheckIn ? [['Early check-in', result.earlyCheckInOption === 'PREVIOUS_NIGHT' ? '🌙 Noche anterior' : '🌅 Noche actual']] : []),
           ].map(([k, v]) => (
@@ -177,7 +177,7 @@ function CreateGuestModal({ onCreated, onCancel }: {
     occupation: '', vehiclePlate: '', observations: '',
   });
   const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState('');
+  const [error, setError] = useState('');
   const set = (k: keyof GuestRequest, v: string) => setForm(f => ({ ...f, [k]: v || undefined }));
 
   const handleSave = async () => {
@@ -278,8 +278,8 @@ function PriceBox({ price, loading }: { price: PriceResponse | null; loading: bo
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CheckIn() {
-  const navigate  = useNavigate();
-  const location  = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const prefill: PrefillData | undefined = (location.state as any)?.prefill;
   const existingReservationId: string | null = (location.state as any)?.reservationId ?? null;
   const fromPlanilla = !!prefill?.roomId;
@@ -287,26 +287,26 @@ export default function CheckIn() {
   const [step, setStep] = useState<Step>('guest');
 
   // Guest
-  const [guestQuery,      setGuestQuery]      = useState('');
-  const [guestResults,    setGuestResults]    = useState<GuestResponse[]>([]);
-  const [guestLoading,    setGuestLoading]    = useState(false);
-  const [selectedGuest,   setSelectedGuest]   = useState<GuestResponse | null>(null);
+  const [guestQuery, setGuestQuery] = useState('');
+  const [guestResults, setGuestResults] = useState<GuestResponse[]>([]);
+  const [guestLoading, setGuestLoading] = useState(false);
+  const [selectedGuest, setSelectedGuest] = useState<GuestResponse | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Room
-  const [roomTypes,           setRoomTypes]           = useState<RoomTypeOption[]>([]);
-  const [filteredRooms,       setFilteredRooms]       = useState<AvailableRoom[]>([]);
-  const [roomsLoading,        setRoomsLoading]        = useState(false);
-  const [selectedRoomTypeId,  setSelectedRoomTypeId]  = useState(prefill?.roomTypeId ?? '');
-  const [selectedRoomId,      setSelectedRoomId]      = useState(prefill?.roomId ?? '');
-  const [checkInDate,         setCheckInDate]         = useState(prefill?.checkInDate ?? today());
-  const [checkOutDate,        setCheckOutDate]        = useState(prefill?.checkOutDate ?? tomorrow());
-  const [numberOfGuests,      setNumberOfGuests]      = useState(prefill?.numberOfGuests ?? 1);
-  const [occupantType,        setOccupantType]        = useState<'INDIVIDUAL' | 'PAREJA' | 'MULTIPLE_PERSON'>(prefill?.occupantType ?? 'INDIVIDUAL');
-  const [towels,              setTowels]              = useState(prefill?.numberOfGuests ?? 1);
+  const [roomTypes, setRoomTypes] = useState<RoomTypeOption[]>([]);
+  const [filteredRooms, setFilteredRooms] = useState<AvailableRoom[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+  const [selectedRoomTypeId, setSelectedRoomTypeId] = useState(prefill?.roomTypeId ?? '');
+  const [selectedRoomId, setSelectedRoomId] = useState(prefill?.roomId ?? '');
+  const [checkInDate, setCheckInDate] = useState(prefill?.checkInDate ?? today());
+  const [checkOutDate, setCheckOutDate] = useState(prefill?.checkOutDate ?? tomorrow());
+  const [numberOfGuests, setNumberOfGuests] = useState(prefill?.numberOfGuests ?? 1);
+  const [occupantType, setOccupantType] = useState<'INDIVIDUAL' | 'PAREJA' | 'MULTIPLE_PERSON'>(prefill?.occupantType ?? 'INDIVIDUAL');
+  const [towels, setTowels] = useState(prefill?.numberOfGuests ?? 1);
 
   // Price
-  const [priceData,    setPriceData]    = useState<PriceResponse | null>(null);
+  const [priceData, setPriceData] = useState<PriceResponse | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
   const priceDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -317,15 +317,15 @@ export default function CheckIn() {
   const [payments, setPayments] = useState<PaymentEntry[]>([{ method: 'CASH', amount: '' }]);
 
   // Submit
-  const [submitting,      setSubmitting]      = useState(false);
-  const [submitError,     setSubmitError]     = useState('');
-  const [showEarlyModal,  setShowEarlyModal]  = useState(false);
-  const [earlyOption,     setEarlyOption]     = useState<'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | null>(null);
-  const [result,          setResult]          = useState<CheckInResponse | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [showEarlyModal, setShowEarlyModal] = useState(false);
+  const [earlyOption, setEarlyOption] = useState<'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | null>(null);
+  const [result, setResult] = useState<CheckInResponse | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { roomsApi.getTypes().then(setRoomTypes).catch(() => {}); }, []);
+  useEffect(() => { roomsApi.getTypes().then(setRoomTypes).catch(() => { }); }, []);
 
   useEffect(() => {
     if (!selectedRoomTypeId) { setFilteredRooms([]); return; }
@@ -347,9 +347,9 @@ export default function CheckIn() {
 
   useEffect(() => { setTowels(numberOfGuests); }, [numberOfGuests]);
   useEffect(() => {
-    if (numberOfGuests === 1)      setOccupantType('INDIVIDUAL');
+    if (numberOfGuests === 1) setOccupantType('INDIVIDUAL');
     else if (numberOfGuests === 2) setOccupantType('PAREJA');
-    else                           setOccupantType('MULTIPLE_PERSON');
+    else setOccupantType('MULTIPLE_PERSON');
   }, [numberOfGuests]);
   useEffect(() => { if (occupantType === 'INDIVIDUAL') setCompanions([]); }, [occupantType]);
 
@@ -364,18 +364,18 @@ export default function CheckIn() {
     }, 350);
   }, [guestQuery]);
 
-  const nights     = nightCount(checkInDate, checkOutDate);
+  const nights = nightCount(checkInDate, checkOutDate);
   const totalPrice = priceData?.totalPrice ?? 0;
-  const totalPaid  = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   const hasPaidSomething = totalPaid > 0;
-  const overLimit  = totalPrice > 0 && totalPaid > totalPrice;
+  const overLimit = totalPrice > 0 && totalPaid > totalPrice;
 
-  const addPaymentLine    = () => setPayments(p => [...p, { method: 'CASH', amount: '' }]);
+  const addPaymentLine = () => setPayments(p => [...p, { method: 'CASH', amount: '' }]);
   const removePaymentLine = (i: number) => setPayments(p => p.filter((_, idx) => idx !== i));
-  const updatePayment     = (i: number, key: 'method' | 'amount', val: string) =>
+  const updatePayment = (i: number, key: 'method' | 'amount', val: string) =>
     setPayments(p => p.map((x, idx) => idx === i ? { ...x, [key]: val } : x));
 
-  const addCompanion    = () => setCompanions(c => [...c, { name: '', documentType: undefined, documentNumber: '' }]);
+  const addCompanion = () => setCompanions(c => [...c, { name: '', documentType: undefined, documentNumber: '' }]);
   const updateCompanion = (i: number, k: keyof CompanionRequest, v: string) =>
     setCompanions(c => c.map((x, idx) => idx === i ? { ...x, [k]: v || undefined } : x));
   const removeCompanion = (i: number) => setCompanions(c => c.filter((_, idx) => idx !== i));
@@ -386,7 +386,11 @@ export default function CheckIn() {
     executeCheckIn(earlyOption);
   };
 
-  const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | null) => {
+  // ═══════════════════════════════════════════════════════════════════════════
+// REEMPLAZAR executeCheckIn en CheckIn.tsx
+// ═══════════════════════════════════════════════════════════════════════════
+
+const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | null) => {
     if (!selectedGuest || !selectedRoomTypeId || !selectedRoomId) return;
     setSubmitting(true); setSubmitError('');
 
@@ -402,28 +406,53 @@ export default function CheckIn() {
       if (existingReservationId) {
         reservationId = existingReservationId;
       } else {
-        const firstPayment  = payments.find(p => parseFloat(p.amount) > 0);
-        const depositAmount = firstPayment ? parseFloat(firstPayment.amount) : undefined;
-        const reservation   = await checkInApi.createReservation({
-          guestId: selectedGuest.id, firstName: selectedGuest.firstName,
-          lastName: selectedGuest.lastName ?? undefined, phone: selectedGuest.phone,
-          roomTypeId: selectedRoomTypeId, roomId: selectedRoomId,
-          checkInDate, checkOutDate, numberOfGuests, occupantType,
-          companions: companions.filter(c => c.name?.trim()),
-          depositAmount,
+        // Construir lista de pagos válidos
+        const validPayments = payments
+          .filter(p => parseFloat(p.amount) > 0)
+          .map(p => ({ method: p.method, amount: parseFloat(p.amount) }));
+
+        const totalDeposit = validPayments.reduce((sum, p) => sum + p.amount, 0);
+
+        const reservation = await checkInApi.createReservation({
+          guestId:        selectedGuest.id,
+          firstName:      selectedGuest.firstName,
+          lastName:       selectedGuest.lastName ?? undefined,
+          phone:          selectedGuest.phone,
+          roomTypeId:     selectedRoomTypeId,
+          roomId:         selectedRoomId,
+          checkInDate,
+          checkOutDate,
+          numberOfGuests,
+          occupantType,
+          companions:     companions.filter(c => c.name?.trim()),
+          // Total del depósito
+          depositAmount:  totalDeposit > 0 ? totalDeposit : undefined,
+          // Primer método (para compatibilidad)
+          depositMethod:  validPayments.length > 0 ? validPayments[0].method : undefined,
+          // Lista completa de pagos (nuevo campo)
+          depositPayments: validPayments.length > 0 ? validPayments : undefined,
         });
         reservationId = reservation.id as string;
       }
 
       const checkIn = await checkInApi.doCheckIn({
-        reservationId, roomId: selectedRoomId,
-        earlyCheckInOption: earlyOpt ?? undefined, towelsDelivered: towels,
+        reservationId,
+        roomId:             selectedRoomId,
+        earlyCheckInOption: earlyOpt ?? undefined,
+        towelsDelivered:    towels,
       });
       setResult(checkIn);
       setStep('success');
     } catch (e: any) {
-      setSubmitError(e?.response?.data?.error || e?.response?.data?.message || e?.message || 'Error al registrar check-in');
-    } finally { setSubmitting(false); }
+      setSubmitError(
+        e?.response?.data?.error ||
+        e?.response?.data?.message ||
+        e?.message ||
+        'Error al registrar check-in'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleReset = () => {
@@ -436,16 +465,16 @@ export default function CheckIn() {
     navigate('/checkin', { replace: true, state: {} });
   };
 
-  const currentIdx   = STEPS.findIndex(s => s.key === step);
-  const canAdvGuest  = !!selectedGuest;
-  const canAdvRoom   = !!selectedRoomTypeId && !!selectedRoomId && nights > 0;
+  const currentIdx = STEPS.findIndex(s => s.key === step);
+  const canAdvGuest = !!selectedGuest;
+  const canAdvRoom = !!selectedRoomTypeId && !!selectedRoomId && nights > 0;
   const roomTypeName = roomTypes.find(r => r.id === selectedRoomTypeId)?.name ?? '';
-  const roomNumber   = filteredRooms.find(r => r.id === selectedRoomId)?.roomNumber ?? '';
-  const hasPrefill   = !!prefill?.roomTypeId;
+  const roomNumber = filteredRooms.find(r => r.id === selectedRoomId)?.roomNumber ?? '';
+  const hasPrefill = !!prefill?.roomTypeId;
 
   // ─── Clases comunes ──────────────────────────────────────────────────────────
-  const fi  = "w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 placeholder:text-slate-400";
-  const fl  = "text-xs text-slate-500 mb-1 block";
+  const fi = "w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 placeholder:text-slate-400";
+  const fl = "text-xs text-slate-500 mb-1 block";
   const btn = "px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white text-sm font-semibold rounded-xl transition-colors";
   const btnBack = "px-4 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium rounded-xl transition-colors";
 
@@ -464,11 +493,10 @@ export default function CheckIn() {
           {STEPS.map((s, i) => (
             <div key={s.key} className={`flex items-center ${i < STEPS.length - 1 ? 'flex-1' : ''}`}>
               <div className="flex items-center gap-2">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 flex-shrink-0 transition-all ${
-                  i < currentIdx  ? 'bg-slate-800 border-slate-800 text-white' :
-                  i === currentIdx ? 'bg-white border-slate-800 text-slate-800' :
-                                     'bg-white border-slate-200 text-slate-400'
-                }`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 flex-shrink-0 transition-all ${i < currentIdx ? 'bg-slate-800 border-slate-800 text-white' :
+                    i === currentIdx ? 'bg-white border-slate-800 text-slate-800' :
+                      'bg-white border-slate-200 text-slate-400'
+                  }`}>
                   {i < currentIdx ? '✓' : i + 1}
                 </div>
                 <span className={`text-xs font-medium ${i === currentIdx ? 'text-slate-800' : 'text-slate-400'}`}>{s.label}</span>
@@ -604,11 +632,10 @@ export default function CheckIn() {
             {roomTypes.map(rt => (
               <div key={rt.id}
                 onClick={() => { setSelectedRoomTypeId(rt.id); setSelectedRoomId(''); setPriceData(null); }}
-                className={`border-2 rounded-xl p-3 cursor-pointer transition-all text-center ${
-                  selectedRoomTypeId === rt.id
+                className={`border-2 rounded-xl p-3 cursor-pointer transition-all text-center ${selectedRoomTypeId === rt.id
                     ? 'border-slate-800 bg-slate-50'
                     : 'border-slate-200 hover:border-slate-400'
-                }`}>
+                  }`}>
                 <div className="text-sm font-semibold text-slate-800">{rt.name}</div>
                 <div className="text-xs text-slate-400 mt-0.5">Cap. {rt.capacity}</div>
               </div>
@@ -631,7 +658,7 @@ export default function CheckIn() {
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div><label className={fl}>Número de personas</label>
               <select className={fi} value={numberOfGuests} onChange={e => setNumberOfGuests(Number(e.target.value))}>
-                {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} persona{n !== 1 ? 's' : ''}</option>)}
+                {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} persona{n !== 1 ? 's' : ''}</option>)}
               </select>
             </div>
             <div><label className={fl}>Tipo ocupante</label>
@@ -669,13 +696,12 @@ export default function CheckIn() {
                   {filteredRooms.map(r => (
                     <div key={r.id}
                       onClick={() => setSelectedRoomId(r.id)}
-                      className={`flex items-center justify-between border-2 rounded-xl px-4 py-3 cursor-pointer transition-all ${
-                        selectedRoomId === r.id
+                      className={`flex items-center justify-between border-2 rounded-xl px-4 py-3 cursor-pointer transition-all ${selectedRoomId === r.id
                           ? 'border-slate-800 bg-slate-50'
                           : r.status === 'RESERVED'
-                          ? 'border-purple-200 hover:border-purple-400'
-                          : 'border-slate-200 hover:border-slate-400'
-                      }`}>
+                            ? 'border-purple-200 hover:border-purple-400'
+                            : 'border-slate-200 hover:border-slate-400'
+                        }`}>
                       <div>
                         <div className="text-base font-bold text-slate-800">Hab. {r.roomNumber}</div>
                         <div className="text-xs text-slate-400">
@@ -683,9 +709,8 @@ export default function CheckIn() {
                           {r.status === 'RESERVED' && <span className="ml-2 text-purple-600 font-semibold">· Pre-asignada</span>}
                         </div>
                       </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
-                        selectedRoomId === r.id ? 'bg-slate-800 border-slate-800 text-white' : 'border-slate-300'
-                      }`}>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${selectedRoomId === r.id ? 'bg-slate-800 border-slate-800 text-white' : 'border-slate-300'
+                        }`}>
                         {selectedRoomId === r.id ? '✓' : ''}
                       </div>
                     </div>
@@ -830,21 +855,25 @@ export default function CheckIn() {
           )}
 
           {[
-            { title: 'Huésped', rows: [
-              ['Nombre',    selectedGuest.fullName],
-              ['Teléfono',  selectedGuest.phone],
-              ...(selectedGuest.documentNumber ? [['Documento', `${selectedGuest.documentType} ${selectedGuest.documentNumber}`]] : []),
-            ]},
-            { title: 'Habitación', rows: [
-              ['Tipo',        roomTypeName],
-              ['Habitación',  `#${roomNumber}`],
-              ['Entrada',     new Date(checkInDate + 'T12:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })],
-              ['Salida',      new Date(checkOutDate + 'T12:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })],
-              ['Noches',      String(nights)],
-              ['Personas',    `${numberOfGuests} · ${OCCUPANT_LABELS[occupantType]}`],
-              ['Toallas',     `${towels} 🛁`],
-              ...(priceData ? [['Total estadía', fmtCOP(priceData.totalPrice)]] : []),
-            ]},
+            {
+              title: 'Huésped', rows: [
+                ['Nombre', selectedGuest.fullName],
+                ['Teléfono', selectedGuest.phone],
+                ...(selectedGuest.documentNumber ? [['Documento', `${selectedGuest.documentType} ${selectedGuest.documentNumber}`]] : []),
+              ]
+            },
+            {
+              title: 'Habitación', rows: [
+                ['Tipo', roomTypeName],
+                ['Habitación', `#${roomNumber}`],
+                ['Entrada', new Date(checkInDate + 'T12:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })],
+                ['Salida', new Date(checkOutDate + 'T12:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })],
+                ['Noches', String(nights)],
+                ['Personas', `${numberOfGuests} · ${OCCUPANT_LABELS[occupantType]}`],
+                ['Toallas', `${towels} 🛁`],
+                ...(priceData ? [['Total estadía', fmtCOP(priceData.totalPrice)]] : []),
+              ]
+            },
           ].map(section => (
             <div key={section.title} className="mb-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{section.title}</p>

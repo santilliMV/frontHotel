@@ -12,6 +12,7 @@ import CheckOut from './pages/CheckOut';
 import Caja from './pages/Caja';
 import Gastos from './pages/Gastos';
 import Rato from './pages/Rato';
+import Toallas from './pages/Toallas';
 
 const queryClient = new QueryClient();
 
@@ -46,7 +47,7 @@ export default function App() {
             <Route path="/checkin" element={<CheckIn />} />
             <Route path="/checkout" element={<CheckOut />} />
             <Route path="vitrina" element={<Placeholder title="Vitrina" />} />
-            <Route path="toallas" element={<Placeholder title="Toallas" />} />
+            <Route path="/toallas" element={<Toallas />} />
             <Route path="/rato" element={<Rato />} />
             <Route path="caja" element={<Caja />} />
             <Route path="/gastos" element={<Gastos />} />

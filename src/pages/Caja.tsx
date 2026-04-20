@@ -200,7 +200,8 @@ export default function Caja() {
     queryKey: ['cash-transactions', selectedDate],
     queryFn: () => apiClient.get(`/cash/payments?date=${selectedDate}`).then(r => r.data),
     enabled: !!caja?.id,
-    refetchInterval: viewingToday ? 30000 : false,
+    staleTime: 0,                              // ← fuerza refetch siempre
+    refetchInterval: viewingToday ? 15000 : false,  // ← de 30s a 15s
   });
 
   // ── Cálculos ──────────────────────────────────────────────────────────────
@@ -216,11 +217,11 @@ export default function Caja() {
   const txGroups = groupByShift(transactions, shifts);
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['cash-date', selectedDate] });
-    queryClient.invalidateQueries({ queryKey: ['cash-withdrawals', caja?.id] });
-    queryClient.invalidateQueries({ queryKey: ['cash-breakdown', caja?.id] });
-    queryClient.invalidateQueries({ queryKey: ['cash-transactions', selectedDate] });
-    queryClient.invalidateQueries({ queryKey: ['shifts-date', selectedDate] });
+    queryClient.invalidateQueries({ queryKey: ['cash-date'] });          // ← sin selectedDate para invalidar todo
+    queryClient.invalidateQueries({ queryKey: ['cash-withdrawals'] });
+    queryClient.invalidateQueries({ queryKey: ['cash-breakdown'] });
+    queryClient.invalidateQueries({ queryKey: ['cash-transactions'] });  // ← sin selectedDate
+    queryClient.invalidateQueries({ queryKey: ['shifts-date'] });
   };
 
   if (isLoading) return (
@@ -418,8 +419,8 @@ export default function Caja() {
                             <div className="text-right">
                               <p className="text-xs text-slate-400">Diferencia</p>
                               <p className={`text-sm font-semibold ${shift.discrepancy === null ? 'text-slate-400'
-                                  : Math.abs(shift.discrepancy) === 0 ? 'text-emerald-600'
-                                    : 'text-red-600'
+                                : Math.abs(shift.discrepancy) === 0 ? 'text-emerald-600'
+                                  : 'text-red-600'
                                 }`}>
                                 {shift.discrepancy === null ? '—'
                                   : Math.abs(shift.discrepancy) === 0 ? '✓'
@@ -526,8 +527,8 @@ export default function Caja() {
                                   {METHOD_LABELS[tx.method] ?? tx.method}
                                 </span>
                                 <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${tx.type === 'CHECKIN' ? 'bg-blue-100 text-blue-700'
-                                    : tx.type === 'RATO' ? 'bg-purple-100 text-purple-700'
-                                      : 'bg-slate-100 text-slate-600'
+                                  : tx.type === 'RATO' ? 'bg-purple-100 text-purple-700'
+                                    : 'bg-slate-100 text-slate-600'
                                   }`}>
                                   {tx.type === 'CHECKIN' ? 'N' : tx.type === 'RATO' ? 'R' : 'S'}
                                 </span>

@@ -43,6 +43,7 @@ const CATEGORIES: { value: string; label: string }[] = [
   { value: 'MANTENIMIENTO', label: 'Mantenimiento' },
   { value: 'SERVICIOS',     label: 'Servicios' },
   { value: 'SUELDOS',       label: 'Sueldos' },
+  { value: 'CORTESIA',      label: 'Cortesía' },
   { value: 'OTRO',          label: 'Otro' },
 ];
 
@@ -91,10 +92,9 @@ const methodLabel   = (v: string) => PAYMENT_METHODS.find(m => m.value === v)?.l
 const fetchExpenses = async (date: string): Promise<TodayResponse> => {
   const today = toLocalDateStr(new Date());
   const url = date === today
-  ? '/expenses/today'
-  : `/expenses/date/${date}`;
+    ? '/expenses/today'
+    : `/expenses/date/${date}`;
   const res = await apiClient.get(url);
-  // /today devuelve { expenses, total }, /date devuelve array directo
   if (Array.isArray(res.data)) {
     const expenses: Expense[] = res.data;
     const total = expenses.reduce((s, e) => s + e.amount, 0);

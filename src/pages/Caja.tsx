@@ -61,7 +61,7 @@ interface PaymentTransaction {
   paymentDate: string;
   notes: string | null;
   isPartialPayment: boolean;
-  type: 'CHECKIN' | 'CHECKOUT';
+  type: 'CHECKIN' | 'CHECKOUT' | 'RATO';
   guestName: string;
   roomNumber: string | null;
   reservationNumber: string | null;
@@ -160,10 +160,10 @@ export default function Caja() {
   const isAdmin = user?.role === 'ADMIN';
 
   const [selectedDate, setSelectedDate] = useState(toLocalDateStr(new Date()));
-  const [showOpenModal,     setShowOpenModal]     = useState(false);
+  const [showOpenModal, setShowOpenModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
-  const [showCloseModal,    setShowCloseModal]    = useState(false);
-  const [expandedShift,     setExpandedShift]     = useState<string | null>(null);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [expandedShift, setExpandedShift] = useState<string | null>(null);
 
   const viewingToday = isToday(selectedDate);
 
@@ -417,14 +417,13 @@ export default function Caja() {
                           {shift.closedAt && (
                             <div className="text-right">
                               <p className="text-xs text-slate-400">Diferencia</p>
-                              <p className={`text-sm font-semibold ${
-                                shift.discrepancy === null ? 'text-slate-400'
+                              <p className={`text-sm font-semibold ${shift.discrepancy === null ? 'text-slate-400'
                                   : Math.abs(shift.discrepancy) === 0 ? 'text-emerald-600'
-                                  : 'text-red-600'
-                              }`}>
+                                    : 'text-red-600'
+                                }`}>
                                 {shift.discrepancy === null ? '—'
                                   : Math.abs(shift.discrepancy) === 0 ? '✓'
-                                  : `${shift.discrepancy > 0 ? '+' : ''}${fmtCOP(shift.discrepancy)}`}
+                                    : `${shift.discrepancy > 0 ? '+' : ''}${fmtCOP(shift.discrepancy)}`}
                               </p>
                             </div>
                           )}
@@ -435,10 +434,10 @@ export default function Caja() {
                         <div className="px-5 pb-4 bg-slate-50 border-t border-slate-100">
                           <div className="grid grid-cols-3 gap-3 pt-3 text-sm">
                             {[
-                              ['Base recibido',     fmtCOP(shift.baseAmount)],
-                              ['Ventas',            fmtCOP(shift.totalSales)],
-                              ['Gastos',            fmtCOP(shift.totalExpenses)],
-                              ['Retirado admin',    fmtCOP(shift.totalWithdrawn)],
+                              ['Base recibido', fmtCOP(shift.baseAmount)],
+                              ['Ventas', fmtCOP(shift.totalSales)],
+                              ['Gastos', fmtCOP(shift.totalExpenses)],
+                              ['Retirado admin', fmtCOP(shift.totalWithdrawn)],
                               ['Efectivo esperado', fmtCOP(shiftExpected)],
                               ...(shift.actualCashAmount != null ? [['Contado al cierre', fmtCOP(shift.actualCashAmount)]] : []),
                             ].map(([k, v]) => (
@@ -526,8 +525,11 @@ export default function Caja() {
                                 <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${METHOD_COLORS[tx.method] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                                   {METHOD_LABELS[tx.method] ?? tx.method}
                                 </span>
-                                <span className={`text-xs ${tx.type === 'CHECKIN' ? 'text-blue-500' : 'text-slate-400'}`}>
-                                  {tx.type === 'CHECKIN' ? 'entrada' : 'salida'}
+                                <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${tx.type === 'CHECKIN' ? 'bg-blue-100 text-blue-700'
+                                    : tx.type === 'RATO' ? 'bg-purple-100 text-purple-700'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                  {tx.type === 'CHECKIN' ? 'N' : tx.type === 'RATO' ? 'R' : 'S'}
                                 </span>
                               </div>
                             </td>

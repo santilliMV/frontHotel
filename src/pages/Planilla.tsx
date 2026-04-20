@@ -32,6 +32,7 @@ interface RoomByDate {
   preAssignedGuestName?: string;
   preAssignedCheckIn?: string;
   preAssignedCheckOut?: string;
+  rato?: boolean;
 }
 
 const STATUS_STYLES: Record<RoomStatus, string> = {
@@ -260,6 +261,7 @@ export default function Planilla() {
                 onDirectCheckin={() => navigate('/checkin')}
                 onMover={handleMover}
                 onEntregar={handleEntregar}
+                onVerRato={() => navigate('/rato')} // 👈 NUEVO
               />
             ))}
             {filtered.length === 0 && (
@@ -326,7 +328,7 @@ export default function Planilla() {
 // ─── Fila ─────────────────────────────────────────────────────────────────────
 
 function RoomRow({
-  room, isToday, onChangeStatus, onCheckin, onDirectCheckin, onMover, onEntregar,
+  room, isToday, onChangeStatus, onCheckin, onDirectCheckin, onMover, onEntregar, onVerRato,
 }: {
   room: RoomByDate;
   isToday: boolean;
@@ -335,6 +337,7 @@ function RoomRow({
   onDirectCheckin: () => void;
   onMover: (reservaId: string) => void;
   onEntregar: (reservaId: string) => void;
+  onVerRato: () => void;
 }) {
   const isOccupied = room.status === 'OCCUPIED';
   const isReserved = room.status === 'RESERVED';
@@ -354,8 +357,11 @@ function RoomRow({
       <td className="px-4 py-3 text-slate-600 text-xs">{room.roomTypeName}</td>
       <td className="px-4 py-3 text-slate-600">{room.floor}</td>
       <td className="px-4 py-3">
-        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${STATUS_STYLES[room.status]}`}>
-          {room.statusLabel}
+        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${room.rato
+          ? 'bg-violet-100 text-violet-700 border-violet-200'
+          : STATUS_STYLES[room.status]
+          }`}>
+          {room.rato ? 'Rato' : room.statusLabel}
         </span>
       </td>
       <td className="px-4 py-3">
@@ -380,10 +386,10 @@ function RoomRow({
           )}
           {isToday && isOccupied && reservaId && (
             <button
-              onClick={() => onEntregar(reservaId)}
+              onClick={() => room.rato ? onVerRato() : onEntregar(reservaId)}
               className="text-xs text-white bg-amber-600 hover:bg-amber-500 rounded-lg px-3 py-1.5"
             >
-              Entregar
+              {room.rato ? 'Ver rato' : 'Entregar'}
             </button>
           )}
           {isToday && isDirty && (

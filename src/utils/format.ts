@@ -6,7 +6,7 @@ export function formatCurrency(value: number): string {
 }
 
 export function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = new Date(dateStr + 'T12:00:00');
   return date.toLocaleDateString('es-CO', {
     day: '2-digit',
     month: '2-digit',

@@ -11,6 +11,7 @@ import Huespedes from './pages/Huespedes';
 import CheckOut from './pages/CheckOut';
 import Caja from './pages/Caja';
 import Gastos from './pages/Gastos';
+import Rato from './pages/Rato';
 
 const queryClient = new QueryClient();
 
@@ -46,7 +47,7 @@ export default function App() {
             <Route path="/checkout" element={<CheckOut />} />
             <Route path="vitrina" element={<Placeholder title="Vitrina" />} />
             <Route path="toallas" element={<Placeholder title="Toallas" />} />
-            <Route path="rato" element={<Placeholder title="Servicio Rato" />} />
+            <Route path="/rato" element={<Rato />} />
             <Route path="caja" element={<Caja />} />
             <Route path="/gastos" element={<Gastos />} />
             <Route path="/huespedes" element={<Huespedes />} />

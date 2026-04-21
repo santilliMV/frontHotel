@@ -13,6 +13,8 @@ import Caja from './pages/Caja';
 import Gastos from './pages/Gastos';
 import Rato from './pages/Rato';
 import Toallas from './pages/Toallas';
+import Vitrina from './pages/Vitrina'
+import Observaciones from './pages/Observaciones'
 
 const queryClient = new QueryClient();
 
@@ -46,13 +48,13 @@ export default function App() {
             <Route path="reservas" element={<Reservas />} />
             <Route path="/checkin" element={<CheckIn />} />
             <Route path="/checkout" element={<CheckOut />} />
-            <Route path="vitrina" element={<Placeholder title="Vitrina" />} />
+            <Route path="/vitrina" element={<Vitrina />} />
             <Route path="/toallas" element={<Toallas />} />
             <Route path="/rato" element={<Rato />} />
             <Route path="caja" element={<Caja />} />
             <Route path="/gastos" element={<Gastos />} />
             <Route path="/huespedes" element={<Huespedes />} />
-            <Route path="observaciones" element={<Placeholder title="Observaciones" />} />
+            <Route path="/observaciones" element={<Observaciones />} />
             <Route path="admin/precios" element={<Placeholder title="Precios" />} />
             <Route path="admin/cortesias" element={<Placeholder title="Cortesias" />} />
             <Route path="admin/auditoria" element={<Placeholder title="Auditoria" />} />

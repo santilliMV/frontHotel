@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { updateRoomStatus } from '../api/dashboard';
@@ -35,28 +35,60 @@ interface RoomByDate {
   rato?: boolean;
 }
 
+interface DailyObservation {
+  id: string;
+  date: string;
+  observationFor: string;
+  content: string;
+  createdBy: string | null;
+  type: 'GENERAL' | 'MAINTENANCE' | 'WARNING' | 'CLEANING' | string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | string;
+  resolved: boolean;
+  createdAt: string;
+}
+
 const STATUS_STYLES: Record<RoomStatus, string> = {
-  AVAILABLE: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  OCCUPIED: 'bg-blue-100 text-blue-700 border-blue-200',
-  DIRTY: 'bg-amber-100 text-amber-700 border-amber-200',
+  AVAILABLE:   'bg-emerald-100 text-emerald-700 border-emerald-200',
+  OCCUPIED:    'bg-blue-100 text-blue-700 border-blue-200',
+  DIRTY:       'bg-amber-100 text-amber-700 border-amber-200',
   MAINTENANCE: 'bg-red-100 text-red-700 border-red-200',
-  RESERVED: 'bg-purple-100 text-purple-700 border-purple-200',
+  RESERVED:    'bg-purple-100 text-purple-700 border-purple-200',
 };
 
 const STATUS_ROW: Record<RoomStatus, string> = {
-  AVAILABLE: '',
-  OCCUPIED: 'bg-blue-50',
-  DIRTY: 'bg-amber-50',
+  AVAILABLE:   '',
+  OCCUPIED:    'bg-blue-50',
+  DIRTY:       'bg-amber-50',
   MAINTENANCE: 'bg-red-50',
-  RESERVED: 'bg-purple-50',
+  RESERVED:    'bg-purple-50',
 };
 
 const STATUS_LABELS: Record<RoomStatus, string> = {
-  AVAILABLE: 'Disponible',
-  OCCUPIED: 'Ocupada',
-  DIRTY: 'Sucia',
+  AVAILABLE:   'Disponible',
+  OCCUPIED:    'Ocupada',
+  DIRTY:       'Sucia',
   MAINTENANCE: 'Mantenimiento',
-  RESERVED: 'Reservada',
+  RESERVED:    'Reservada',
+};
+
+const OBS_TYPE_LABEL: Record<string, string> = {
+  GENERAL:     'General',
+  MAINTENANCE: 'Mantenimiento',
+  WARNING:     'Advertencia',
+  CLEANING:    'Aseo',
+};
+
+const OBS_TYPE_COLOR: Record<string, string> = {
+  GENERAL:     'bg-slate-100 text-slate-600',
+  MAINTENANCE: 'bg-blue-100 text-blue-600',
+  WARNING:     'bg-orange-100 text-orange-600',
+  CLEANING:    'bg-teal-100 text-teal-600',
+};
+
+const OBS_PRIORITY_LABEL: Record<string, string> = {
+  LOW:    'Baja',
+  MEDIUM: 'Media',
+  HIGH:   'Alta',
 };
 
 // ─── Helpers fecha ────────────────────────────────────────────────────────────
@@ -94,6 +126,7 @@ export default function Planilla() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState<RoomStatus | 'ALL'>('ALL');
   const [reservaCambio, setReservaCambio] = useState<ReservationResponse | null>(null);
+  const [showMaintenanceAlert, setShowMaintenanceAlert] = useState(false);
 
   const dateStr = toDateStr(currentDate);
   const isToday = dateStr === toDateStr(todayDate);
@@ -103,6 +136,49 @@ export default function Planilla() {
     queryFn: () => apiClient.get(`/rooms/by-date?date=${dateStr}`).then(r => r.data),
     refetchInterval: 30000,
   });
+
+  // ── Query observaciones ───────────────────────────────────────────────────
+
+  const { data: pendingObs = [] } = useQuery<DailyObservation[]>({
+    queryKey: ['observations-today-planilla'],
+    queryFn: () => apiClient.get('/observations/today').then(r => r.data),
+    refetchInterval: 60_000,
+    staleTime: 0,
+  });
+
+  const allPendingObs = pendingObs.filter(o => !o.resolved);
+  const highObs       = allPendingObs.filter(o => o.priority === 'HIGH');
+
+  // Ordenar: HIGH primero, luego MEDIUM, luego LOW
+  const priorityOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  const sortedObs = [...allPendingObs].sort(
+    (a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3)
+  );
+
+  // ── Hook notificación horaria de mantenimiento ────────────────────────────
+
+  const notifShownAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    const checkAndNotify = () => {
+      const now = new Date();
+      const maintenanceObs = pendingObs.filter(o => !o.resolved && o.type === 'MAINTENANCE');
+      if (maintenanceObs.length === 0) return;
+
+      const lastShown = notifShownAt.current;
+      const oneHour = 60 * 60 * 1000;
+      if (lastShown && now.getTime() - lastShown < oneHour) return;
+
+      notifShownAt.current = now.getTime();
+      setShowMaintenanceAlert(true);
+    };
+
+    checkAndNotify();
+    const interval = setInterval(checkAndNotify, 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [pendingObs]);
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   const statusMutation = useMutation({
     mutationFn: ({ roomId, status }: { roomId: string; status: string }) =>
@@ -129,16 +205,12 @@ export default function Planilla() {
     } catch { /* silencioso */ }
   };
 
-  /**
-   * Navega a /checkin pasando los datos de la reserva como state.
-   * CheckIn los usa para pre-rellenar el formulario.
-   */
   const handleCheckin = async (room: RoomByDate, reservaId: string) => {
     try {
       const reserva = await reservationsApi.getById(reservaId);
       navigate('/checkin', {
         state: {
-          reservationId: reserva.id,  // ✅ agrega esto
+          reservationId: reserva.id,
           prefill: {
             roomTypeId: reserva.roomTypeId,
             roomId: room.id,
@@ -153,6 +225,7 @@ export default function Planilla() {
       navigate('/checkin');
     }
   };
+
   const handleEntregar = (reservaId: string) => {
     navigate('/checkout', { state: { reservationId: reservaId } });
   };
@@ -179,7 +252,6 @@ export default function Planilla() {
           <p className="text-sm text-slate-500 mt-0.5 capitalize">{formatDayLabel(currentDate)}</p>
         </div>
 
-        {/* Navegador de fecha */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setCurrentDate(d => addDays(d, -1))}
@@ -188,7 +260,6 @@ export default function Planilla() {
           >
             ‹
           </button>
-
           <input
             type="date"
             value={dateStr}
@@ -198,14 +269,12 @@ export default function Planilla() {
             }}
             className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-
           <button
             onClick={() => setCurrentDate(d => addDays(d, 1))}
             className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-lg font-bold"
           >
             ›
           </button>
-
           {!isToday && (
             <button
               onClick={() => { setCurrentDate(todayDate); setFilterStatus('ALL'); }}
@@ -223,10 +292,11 @@ export default function Planilla() {
           <button
             key={status}
             onClick={() => setFilterStatus(filterStatus === status ? 'ALL' : status)}
-            className={`rounded-lg border p-3 text-left transition-all ${filterStatus === status
-              ? STATUS_STYLES[status] + ' ring-2 ring-offset-1 ring-slate-400'
-              : 'bg-white border-slate-200 hover:border-slate-300'
-              }`}
+            className={`rounded-lg border p-3 text-left transition-all ${
+              filterStatus === status
+                ? STATUS_STYLES[status] + ' ring-2 ring-offset-1 ring-slate-400'
+                : 'bg-white border-slate-200 hover:border-slate-300'
+            }`}
           >
             <p className="text-2xl font-bold text-slate-800">{counts[status] ?? 0}</p>
             <p className="text-xs text-slate-500 mt-0.5">{STATUS_LABELS[status]}</p>
@@ -234,7 +304,71 @@ export default function Planilla() {
         ))}
       </div>
 
-      {/* Tabla */}
+      {/* ── Observaciones pendientes ── */}
+      {sortedObs.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-700">Observaciones pendientes</h3>
+            <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 rounded-md">
+              {sortedObs.length}
+            </span>
+            {highObs.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" />
+                {highObs.length} urgente{highObs.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          <div className="divide-y divide-slate-50">
+            {sortedObs.map(o => (
+              <div
+                key={o.id}
+                className={`flex items-start gap-3 px-5 py-3.5 ${
+                  o.priority === 'HIGH' ? 'bg-red-50/50' : ''
+                }`}
+              >
+                {/* Dot de prioridad */}
+                <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                  o.priority === 'HIGH'   ? 'bg-red-500 animate-pulse'
+                  : o.priority === 'MEDIUM' ? 'bg-amber-400'
+                  : 'bg-slate-300'
+                }`} />
+
+                {/* Contenido */}
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm leading-snug ${
+                    o.priority === 'HIGH' ? 'text-red-800 font-medium' : 'text-slate-700'
+                  }`}>
+                    {o.content}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                      OBS_TYPE_COLOR[o.type] ?? 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {OBS_TYPE_LABEL[o.type] ?? o.type}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded border ${
+                      o.priority === 'HIGH'
+                        ? 'bg-red-100 text-red-600 border-red-200'
+                        : o.priority === 'MEDIUM'
+                          ? 'bg-amber-100 text-amber-600 border-amber-200'
+                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                    }`}>
+                      {OBS_PRIORITY_LABEL[o.priority] ?? o.priority}
+                    </span>
+                    {o.createdBy && (
+                      <span className="text-xs text-slate-400">por {o.createdBy}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tabla de habitaciones */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -261,7 +395,7 @@ export default function Planilla() {
                 onDirectCheckin={() => navigate('/checkin')}
                 onMover={handleMover}
                 onEntregar={handleEntregar}
-                onVerRato={() => navigate('/rato')} // 👈 NUEVO
+                onVerRato={() => navigate('/rato')}
               />
             ))}
             {filtered.length === 0 && (
@@ -321,6 +455,28 @@ export default function Planilla() {
           reservaExistente={reservaCambio}
         />
       )}
+
+      {/* Notificación horaria de mantenimiento */}
+      {showMaintenanceAlert && pendingObs.filter(o => !o.resolved && o.type === 'MAINTENANCE').length > 0 && (
+        <div className="fixed top-4 right-4 z-50 bg-white border border-blue-200 rounded-xl shadow-lg p-4 max-w-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-blue-800">Recordatorio de mantenimiento</p>
+              <ul className="mt-1 space-y-0.5">
+                {pendingObs.filter(o => !o.resolved && o.type === 'MAINTENANCE').map(o => (
+                  <li key={o.id} className="text-xs text-blue-600">· {o.content}</li>
+                ))}
+              </ul>
+            </div>
+            <button
+              onClick={() => setShowMaintenanceAlert(false)}
+              className="text-slate-400 hover:text-slate-600 text-lg leading-none flex-shrink-0"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -339,16 +495,16 @@ function RoomRow({
   onEntregar: (reservaId: string) => void;
   onVerRato: () => void;
 }) {
-  const isOccupied = room.status === 'OCCUPIED';
-  const isReserved = room.status === 'RESERVED';
-  const isDirty = room.status === 'DIRTY';
+  const isOccupied  = room.status === 'OCCUPIED';
+  const isReserved  = room.status === 'RESERVED';
+  const isDirty     = room.status === 'DIRTY';
   const isAvailable = room.status === 'AVAILABLE';
 
   const guestName = isOccupied ? room.guestName : (isReserved ? room.preAssignedGuestName : '');
-  const checkIn = isOccupied ? room.checkInDate : (isReserved ? room.preAssignedCheckIn : '');
-  const checkOut = isOccupied ? room.checkOutDate : (isReserved ? room.preAssignedCheckOut : '');
-  const nights = isOccupied ? room.numberOfNights : undefined;
-  const resNum = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber : '');
+  const checkIn   = isOccupied ? room.checkInDate : (isReserved ? room.preAssignedCheckIn : '');
+  const checkOut  = isOccupied ? room.checkOutDate : (isReserved ? room.preAssignedCheckOut : '');
+  const nights    = isOccupied ? room.numberOfNights : undefined;
+  const resNum    = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber : '');
   const reservaId = isOccupied ? room.reservationId : (isReserved ? room.preAssignedReservationId : undefined);
 
   return (
@@ -357,10 +513,11 @@ function RoomRow({
       <td className="px-4 py-3 text-slate-600 text-xs">{room.roomTypeName}</td>
       <td className="px-4 py-3 text-slate-600">{room.floor}</td>
       <td className="px-4 py-3">
-        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${room.rato
-          ? 'bg-violet-100 text-violet-700 border-violet-200'
-          : STATUS_STYLES[room.status]
-          }`}>
+        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${
+          room.rato
+            ? 'bg-violet-100 text-violet-700 border-violet-200'
+            : STATUS_STYLES[room.status]
+        }`}>
           {room.rato ? 'Rato' : room.statusLabel}
         </span>
       </td>

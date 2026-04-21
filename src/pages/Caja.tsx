@@ -61,7 +61,7 @@ interface PaymentTransaction {
   paymentDate: string;
   notes: string | null;
   isPartialPayment: boolean;
-  type: 'CHECKIN' | 'CHECKOUT' | 'RATO';
+  type: 'CHECKIN' | 'CHECKOUT' | 'RATO' | 'VITRINA';
   guestName: string;
   roomNumber: string | null;
   reservationNumber: string | null;
@@ -528,9 +528,10 @@ export default function Caja() {
                                 </span>
                                 <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${tx.type === 'CHECKIN' ? 'bg-blue-100 text-blue-700'
                                   : tx.type === 'RATO' ? 'bg-purple-100 text-purple-700'
-                                    : 'bg-slate-100 text-slate-600'
+                                    : tx.type === 'VITRINA' ? 'bg-green-100 text-green-700'
+                                      : 'bg-slate-100 text-slate-600'
                                   }`}>
-                                  {tx.type === 'CHECKIN' ? 'N' : tx.type === 'RATO' ? 'R' : 'S'}
+                                  {tx.type === 'CHECKIN' ? 'N' : tx.type === 'RATO' ? 'R' : tx.type === 'VITRINA' ? 'V' : 'S'}
                                 </span>
                               </div>
                             </td>

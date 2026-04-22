@@ -8,7 +8,9 @@ import type { ReservationResponse } from '../api/reservations';
 import type { RoomStatus } from '../types';
 import { formatDate } from '../utils/format';
 import NuevaReservaModal from '../components/reservas/NuevaReservaModal';
+import RoomDetailPanel from '../components/planilla/RoomDetailPanel';
 
+// ─── Tipos ───────────────────────────────────────────────────────────────────
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 interface RoomByDate {
@@ -33,6 +35,7 @@ interface RoomByDate {
   preAssignedCheckIn?: string;
   preAssignedCheckOut?: string;
   rato?: boolean;
+  checkedOut?: boolean;
 }
 
 interface DailyObservation {
@@ -48,47 +51,51 @@ interface DailyObservation {
 }
 
 const STATUS_STYLES: Record<RoomStatus, string> = {
-  AVAILABLE:   'bg-emerald-100 text-emerald-700 border-emerald-200',
-  OCCUPIED:    'bg-blue-100 text-blue-700 border-blue-200',
-  DIRTY:       'bg-amber-100 text-amber-700 border-amber-200',
+  AVAILABLE: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  OCCUPIED: 'bg-blue-100 text-blue-700 border-blue-200',
+  DIRTY: 'bg-amber-100 text-amber-700 border-amber-200',
   MAINTENANCE: 'bg-red-100 text-red-700 border-red-200',
-  RESERVED:    'bg-purple-100 text-purple-700 border-purple-200',
+  RESERVED: 'bg-purple-100 text-purple-700 border-purple-200',
+
 };
+// Después de los STATUS_STYLES existentes, agrega esta constante:
+const CHECKED_OUT_STYLE = 'bg-slate-100 text-slate-500 border-slate-200';
+const CHECKED_OUT_ROW = 'bg-slate-50/60';
 
 const STATUS_ROW: Record<RoomStatus, string> = {
-  AVAILABLE:   '',
-  OCCUPIED:    'bg-blue-50',
-  DIRTY:       'bg-amber-50',
+  AVAILABLE: '',
+  OCCUPIED: 'bg-blue-50',
+  DIRTY: 'bg-amber-50',
   MAINTENANCE: 'bg-red-50',
-  RESERVED:    'bg-purple-50',
+  RESERVED: 'bg-purple-50',
 };
 
 const STATUS_LABELS: Record<RoomStatus, string> = {
-  AVAILABLE:   'Disponible',
-  OCCUPIED:    'Ocupada',
-  DIRTY:       'Sucia',
+  AVAILABLE: 'Disponible',
+  OCCUPIED: 'Ocupada',
+  DIRTY: 'Sucia',
   MAINTENANCE: 'Mantenimiento',
-  RESERVED:    'Reservada',
+  RESERVED: 'Reservada',
 };
 
 const OBS_TYPE_LABEL: Record<string, string> = {
-  GENERAL:     'General',
+  GENERAL: 'General',
   MAINTENANCE: 'Mantenimiento',
-  WARNING:     'Advertencia',
-  CLEANING:    'Aseo',
+  WARNING: 'Advertencia',
+  CLEANING: 'Aseo',
 };
 
 const OBS_TYPE_COLOR: Record<string, string> = {
-  GENERAL:     'bg-slate-100 text-slate-600',
+  GENERAL: 'bg-slate-100 text-slate-600',
   MAINTENANCE: 'bg-blue-100 text-blue-600',
-  WARNING:     'bg-orange-100 text-orange-600',
-  CLEANING:    'bg-teal-100 text-teal-600',
+  WARNING: 'bg-orange-100 text-orange-600',
+  CLEANING: 'bg-teal-100 text-teal-600',
 };
 
 const OBS_PRIORITY_LABEL: Record<string, string> = {
-  LOW:    'Baja',
+  LOW: 'Baja',
   MEDIUM: 'Media',
-  HIGH:   'Alta',
+  HIGH: 'Alta',
 };
 
 // ─── Helpers fecha ────────────────────────────────────────────────────────────
@@ -106,11 +113,12 @@ function addDays(d: Date, n: number): Date {
   return r;
 }
 
-function formatDayLabel(d: Date): string {
-  const todayStr = toDateStr(new Date());
+function formatDayLabel(d: Date, isToday: boolean, isPast: boolean): string {
   const ds = toDateStr(d);
+  const todayStr = toDateStr(new Date());
   if (ds === todayStr) return 'Hoy — ' + d.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
   if (ds === toDateStr(addDays(new Date(), 1))) return 'Mañana — ' + d.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' });
+  if (isPast) return 'Historial — ' + d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
@@ -127,17 +135,20 @@ export default function Planilla() {
   const [filterStatus, setFilterStatus] = useState<RoomStatus | 'ALL'>('ALL');
   const [reservaCambio, setReservaCambio] = useState<ReservationResponse | null>(null);
   const [showMaintenanceAlert, setShowMaintenanceAlert] = useState(false);
+  const [detailRoom, setDetailRoom] = useState<RoomByDate | null>(null);
 
   const dateStr = toDateStr(currentDate);
-  const isToday = dateStr === toDateStr(todayDate);
+  const todayStr = toDateStr(todayDate);
+  const isToday = dateStr === todayStr;
+  const isPast = dateStr < todayStr;
 
   const { data: rooms = [], isLoading, isError } = useQuery<RoomByDate[]>({
     queryKey: ['rooms-by-date', dateStr],
     queryFn: () => apiClient.get(`/rooms/by-date?date=${dateStr}`).then(r => r.data),
-    refetchInterval: 30000,
+    refetchInterval: isToday ? 30000 : false,
   });
 
-  // ── Query observaciones ───────────────────────────────────────────────────
+  // ── Query observaciones (solo hoy) ───────────────────────────────────────
 
   const { data: pendingObs = [] } = useQuery<DailyObservation[]>({
     queryKey: ['observations-today-planilla'],
@@ -147,15 +158,14 @@ export default function Planilla() {
   });
 
   const allPendingObs = pendingObs.filter(o => !o.resolved);
-  const highObs       = allPendingObs.filter(o => o.priority === 'HIGH');
+  const highObs = allPendingObs.filter(o => o.priority === 'HIGH');
 
-  // Ordenar: HIGH primero, luego MEDIUM, luego LOW
   const priorityOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
   const sortedObs = [...allPendingObs].sort(
     (a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3)
   );
 
-  // ── Hook notificación horaria de mantenimiento ────────────────────────────
+  // ── Notificación horaria de mantenimiento ────────────────────────────────
 
   const notifShownAt = useRef<number | null>(null);
 
@@ -164,15 +174,12 @@ export default function Planilla() {
       const now = new Date();
       const maintenanceObs = pendingObs.filter(o => !o.resolved && o.type === 'MAINTENANCE');
       if (maintenanceObs.length === 0) return;
-
       const lastShown = notifShownAt.current;
       const oneHour = 60 * 60 * 1000;
       if (lastShown && now.getTime() - lastShown < oneHour) return;
-
       notifShownAt.current = now.getTime();
       setShowMaintenanceAlert(true);
     };
-
     checkAndNotify();
     const interval = setInterval(checkAndNotify, 60 * 60 * 1000);
     return () => clearInterval(interval);
@@ -249,21 +256,21 @@ export default function Planilla() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-800">Planilla de habitaciones</h2>
-          <p className="text-sm text-slate-500 mt-0.5 capitalize">{formatDayLabel(currentDate)}</p>
+          <p className="text-sm text-slate-500 mt-0.5 capitalize">
+            {formatDayLabel(currentDate, isToday, isPast)}
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={() => setCurrentDate(d => addDays(d, -1))}
-            disabled={isToday}
-            className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 text-lg font-bold"
+            className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-lg font-bold"
           >
             ‹
           </button>
           <input
             type="date"
             value={dateStr}
-            min={toDateStr(todayDate)}
             onChange={e => {
               if (e.target.value) setCurrentDate(new Date(e.target.value + 'T12:00:00'));
             }}
@@ -286,17 +293,26 @@ export default function Planilla() {
         </div>
       </div>
 
+      {/* Banner modo historial */}
+      {isPast && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-slate-400 flex-shrink-0" />
+          <p className="text-sm text-slate-600">
+            Modo historial — vista de solo lectura. Las habitaciones con varias entradas ese día aparecen como filas separadas.
+          </p>
+        </div>
+      )}
+
       {/* Tarjetas de estado */}
       <div className="grid grid-cols-5 gap-3">
         {(['AVAILABLE', 'OCCUPIED', 'RESERVED', 'DIRTY', 'MAINTENANCE'] as RoomStatus[]).map(status => (
           <button
             key={status}
             onClick={() => setFilterStatus(filterStatus === status ? 'ALL' : status)}
-            className={`rounded-lg border p-3 text-left transition-all ${
-              filterStatus === status
-                ? STATUS_STYLES[status] + ' ring-2 ring-offset-1 ring-slate-400'
-                : 'bg-white border-slate-200 hover:border-slate-300'
-            }`}
+            className={`rounded-lg border p-3 text-left transition-all ${filterStatus === status
+              ? STATUS_STYLES[status] + ' ring-2 ring-offset-1 ring-slate-400'
+              : 'bg-white border-slate-200 hover:border-slate-300'
+              }`}
           >
             <p className="text-2xl font-bold text-slate-800">{counts[status] ?? 0}</p>
             <p className="text-xs text-slate-500 mt-0.5">{STATUS_LABELS[status]}</p>
@@ -304,8 +320,8 @@ export default function Planilla() {
         ))}
       </div>
 
-      {/* ── Observaciones pendientes ── */}
-      {sortedObs.length > 0 && (
+      {/* Observaciones pendientes — solo se muestran cuando es hoy */}
+      {isToday && sortedObs.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-700">Observaciones pendientes</h3>
@@ -319,42 +335,32 @@ export default function Planilla() {
               </span>
             )}
           </div>
-
           <div className="divide-y divide-slate-50">
             {sortedObs.map(o => (
               <div
                 key={o.id}
-                className={`flex items-start gap-3 px-5 py-3.5 ${
-                  o.priority === 'HIGH' ? 'bg-red-50/50' : ''
-                }`}
+                className={`flex items-start gap-3 px-5 py-3.5 ${o.priority === 'HIGH' ? 'bg-red-50/50' : ''}`}
               >
-                {/* Dot de prioridad */}
-                <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                  o.priority === 'HIGH'   ? 'bg-red-500 animate-pulse'
+                <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${o.priority === 'HIGH' ? 'bg-red-500 animate-pulse'
                   : o.priority === 'MEDIUM' ? 'bg-amber-400'
-                  : 'bg-slate-300'
-                }`} />
-
-                {/* Contenido */}
+                    : 'bg-slate-300'
+                  }`} />
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm leading-snug ${
-                    o.priority === 'HIGH' ? 'text-red-800 font-medium' : 'text-slate-700'
-                  }`}>
+                  <p className={`text-sm leading-snug ${o.priority === 'HIGH' ? 'text-red-800 font-medium' : 'text-slate-700'
+                    }`}>
                     {o.content}
                   </p>
                   <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                      OBS_TYPE_COLOR[o.type] ?? 'bg-slate-100 text-slate-500'
-                    }`}>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${OBS_TYPE_COLOR[o.type] ?? 'bg-slate-100 text-slate-500'
+                      }`}>
                       {OBS_TYPE_LABEL[o.type] ?? o.type}
                     </span>
-                    <span className={`text-xs px-2 py-0.5 rounded border ${
-                      o.priority === 'HIGH'
-                        ? 'bg-red-100 text-red-600 border-red-200'
-                        : o.priority === 'MEDIUM'
-                          ? 'bg-amber-100 text-amber-600 border-amber-200'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
-                    }`}>
+                    <span className={`text-xs px-2 py-0.5 rounded border ${o.priority === 'HIGH'
+                      ? 'bg-red-100 text-red-600 border-red-200'
+                      : o.priority === 'MEDIUM'
+                        ? 'bg-amber-100 text-amber-600 border-amber-200'
+                        : 'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}>
                       {OBS_PRIORITY_LABEL[o.priority] ?? o.priority}
                     </span>
                     {o.createdBy && (
@@ -381,27 +387,31 @@ export default function Planilla() {
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-24">Entrada</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-24">Salida</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-14">N.</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600 w-44">Acciones</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 w-52">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map(room => (
+            {filtered.map((room, index) => (
               <RoomRow
-                key={room.id}
+                key={`${room.id}-${room.reservationId ?? 'none'}-${index}`}
                 room={room}
                 isToday={isToday}
+                isPast={isPast}
                 onChangeStatus={() => { setSelectedRoom(room); setShowStatusModal(true); }}
                 onCheckin={(reservaId) => handleCheckin(room, reservaId)}
                 onDirectCheckin={() => navigate('/checkin')}
                 onMover={handleMover}
                 onEntregar={handleEntregar}
                 onVerRato={() => navigate('/rato')}
+                onVerDetalle={() => setDetailRoom(room)}
               />
             ))}
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={9} className="px-4 py-10 text-center text-slate-400 text-sm">
-                  No hay habitaciones con ese estado para esta fecha.
+                  {isPast
+                    ? 'No hubo actividad en esa fecha.'
+                    : 'No hay habitaciones con ese estado para esta fecha.'}
                 </td>
               </tr>
             )}
@@ -477,6 +487,18 @@ export default function Planilla() {
           </div>
         </div>
       )}
+
+      {/* Panel de detalle */}
+      {detailRoom && (
+        <RoomDetailPanel
+          room={detailRoom}
+          onClose={() => setDetailRoom(null)}
+          onEntregar={(reservaId) => {
+            setDetailRoom(null);
+            handleEntregar(reservaId);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -484,89 +506,118 @@ export default function Planilla() {
 // ─── Fila ─────────────────────────────────────────────────────────────────────
 
 function RoomRow({
-  room, isToday, onChangeStatus, onCheckin, onDirectCheckin, onMover, onEntregar, onVerRato,
+  room, isToday, isPast, onChangeStatus, onCheckin, onDirectCheckin, onMover, onEntregar, onVerRato, onVerDetalle,
 }: {
   room: RoomByDate;
   isToday: boolean;
+  isPast: boolean;
   onChangeStatus: () => void;
   onCheckin: (reservaId: string) => void;
   onDirectCheckin: () => void;
   onMover: (reservaId: string) => void;
   onEntregar: (reservaId: string) => void;
   onVerRato: () => void;
+  onVerDetalle: () => void;
 }) {
-  const isOccupied  = room.status === 'OCCUPIED';
-  const isReserved  = room.status === 'RESERVED';
-  const isDirty     = room.status === 'DIRTY';
+  const isOccupied = room.status === 'OCCUPIED';
+  const isReserved = room.status === 'RESERVED';
+  const isDirty = room.status === 'DIRTY';
   const isAvailable = room.status === 'AVAILABLE';
+  const isEntregada = !!room.checkedOut; // ← nueva condición para marcar como entregada
 
   const guestName = isOccupied ? room.guestName : (isReserved ? room.preAssignedGuestName : '');
-  const checkIn   = isOccupied ? room.checkInDate : (isReserved ? room.preAssignedCheckIn : '');
-  const checkOut  = isOccupied ? room.checkOutDate : (isReserved ? room.preAssignedCheckOut : '');
-  const nights    = isOccupied ? room.numberOfNights : undefined;
-  const resNum    = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber : '');
+  const checkIn = isOccupied ? room.checkInDate : (isReserved ? room.preAssignedCheckIn : '');
+  const checkOut = isOccupied ? room.checkOutDate : (isReserved ? room.preAssignedCheckOut : '');
+  const nights = isOccupied ? room.numberOfNights : undefined;
+  const resNum = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber : '');
   const reservaId = isOccupied ? room.reservationId : (isReserved ? room.preAssignedReservationId : undefined);
 
   return (
-    <tr className={`hover:bg-slate-50 transition-colors ${STATUS_ROW[room.status]}`}>
+    <tr className={`transition-colors ${isEntregada
+        ? 'bg-slate-50/60 opacity-75'
+        : `hover:bg-slate-50 ${STATUS_ROW[room.status]}`
+      }`}>
       <td className="px-4 py-3 font-semibold text-slate-800">{room.roomNumber}</td>
       <td className="px-4 py-3 text-slate-600 text-xs">{room.roomTypeName}</td>
       <td className="px-4 py-3 text-slate-600">{room.floor}</td>
       <td className="px-4 py-3">
-        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${
-          room.rato
-            ? 'bg-violet-100 text-violet-700 border-violet-200'
-            : STATUS_STYLES[room.status]
-        }`}>
-          {room.rato ? 'Rato' : room.statusLabel}
+        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${isEntregada
+            ? 'bg-slate-100 text-slate-400 border-slate-200'
+            : room.rato
+              ? 'bg-violet-100 text-violet-700 border-violet-200'
+              : STATUS_STYLES[room.status]
+          }`}>
+          {isEntregada ? 'Entregada' : room.rato ? 'Rato' : room.statusLabel}
         </span>
       </td>
       <td className="px-4 py-3">
-        {guestName && <span className="text-slate-700 font-medium block">{guestName}</span>}
-        {resNum && <span className="text-xs text-purple-600">{resNum}</span>}
+        {guestName && (
+          <span className={`font-medium block ${isEntregada ? 'text-slate-400' : 'text-slate-700'}`}>
+            {guestName}
+          </span>
+        )}
+        {resNum && (
+          <span className={`text-xs ${isEntregada ? 'text-slate-400' : 'text-purple-600'}`}>
+            {resNum}
+          </span>
+        )}
         {room.guestHasObservations && (
-          <span className="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">⚠️</span>
+          <span className="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">obs.</span>
         )}
       </td>
-      <td className="px-4 py-3 text-slate-600 text-xs">{checkIn ? formatDate(checkIn) : ''}</td>
-      <td className="px-4 py-3 text-slate-600 text-xs">{checkOut ? formatDate(checkOut) : ''}</td>
-      <td className="px-4 py-3 text-slate-500 text-xs">{nights ?? ''}</td>
-      <td className="px-4 py-3">
-        <div className="flex gap-1.5 flex-wrap">
-          {isToday && (isAvailable || isReserved) && (
-            <button
-              onClick={() => reservaId ? onCheckin(reservaId) : onDirectCheckin()}
-              className="text-xs text-white bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-1.5"
-            >
-              Entrada
-            </button>
-          )}
-          {isToday && isOccupied && reservaId && (
-            <button
-              onClick={() => room.rato ? onVerRato() : onEntregar(reservaId)}
-              className="text-xs text-white bg-amber-600 hover:bg-amber-500 rounded-lg px-3 py-1.5"
-            >
-              {room.rato ? 'Ver rato' : 'Entregar'}
-            </button>
-          )}
-          {isToday && isDirty && (
-            <button
-              onClick={onChangeStatus}
-              className="text-xs text-slate-600 border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-100"
-            >
-              Limpia
-            </button>
-          )}
-          {reservaId && (isReserved || isOccupied) && (
-            <button
-              onClick={() => onMover(reservaId)}
-              className="text-xs text-purple-600 border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50"
-            >
-              Mover
-            </button>
-          )}
-        </div>
+      <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-600'}`}>
+        {checkIn ? formatDate(checkIn) : ''}
       </td>
+      <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-600'}`}>
+        {checkOut ? formatDate(checkOut) : ''}
+      </td>
+      <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-500'}`}>
+        {nights ?? ''}
+      </td>
+
+      {!isPast && (
+        <td className="px-4 py-3">
+          {!isEntregada && (
+            <div className="flex gap-1.5 flex-wrap">
+              {isToday && (isAvailable || isReserved) && (
+                <button
+                  onClick={() => reservaId ? onCheckin(reservaId) : onDirectCheckin()}
+                  className="text-xs text-white bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-1.5"
+                >
+                  Entrada
+                </button>
+              )}
+              {isToday && isOccupied && reservaId && (
+                <button
+                  onClick={() => room.rato ? onVerRato() : onEntregar(reservaId)}
+                  className="text-xs text-white bg-amber-600 hover:bg-amber-500 rounded-lg px-3 py-1.5"
+                >
+                  {room.rato ? 'Ver rato' : 'Entregar'}
+                </button>
+              )}
+              {isToday && isDirty && (
+                <button
+                  onClick={onChangeStatus}
+                  className="text-xs text-slate-600 border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-100"
+                >
+                  Limpia
+                </button>
+              )}
+              {isToday && reservaId && (isReserved || isOccupied) && (
+                <button
+                  onClick={() => onMover(reservaId)}
+                  className="text-xs text-purple-600 border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50"
+                >
+                  Mover
+                </button>
+              )}
+            </div>
+          )}
+          {isEntregada && (
+            <span className="text-xs text-slate-400 italic">—</span>
+          )}
+        </td>
+      )}
     </tr>
   );
 }

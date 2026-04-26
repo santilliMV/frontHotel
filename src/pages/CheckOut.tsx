@@ -30,9 +30,6 @@ interface BillingResponse {
   generatedAt: string;
   guestName?: string;
   roomNumber?: string;
-  checkInDate?: string;
-  checkOutDate?: string;
-  numberOfNights?: number;
 }
 
 interface PaymentLine {
@@ -55,13 +52,6 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 
 const ALL_METHODS: PaymentMethod[] = ['CASH', 'CARD', 'TRANSFER', 'QR', 'NEQUI_SALOMON', 'NEQUI_BRAYAN'];
 
-function formatDateTime(dt: string) {
-  if (!dt) return '';
-  const d = new Date(dt);
-  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-}
-
 function formatDate(d: string) {
   if (!d) return '';
   const dt = new Date(d + 'T12:00:00');
@@ -70,7 +60,6 @@ function formatDate(d: string) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-
 export default function CheckOut() {
 
   const location = useLocation();
@@ -78,22 +67,19 @@ export default function CheckOut() {
   useEffect(() => {
     const stateReservationId = location.state?.reservationId as string | undefined;
     if (stateReservationId) {
-      // Buscar la reserva directamente y saltar al paso checkout
       apiClient.get(`/reservations/${stateReservationId}`).then(r => {
         handleSelectReservation(r.data);
-      }).catch(() => {/* si falla, queda en búsqueda */ });
+      }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Búsqueda
+
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState<'phone' | 'number'>('phone');
-
-  // Reserva seleccionada
   const [reservation, setReservation] = useState<ReservationResponse | null>(null);
 
-  // Estado del checkout
+  // step: search → checkout → payment → done
   const [step, setStep] = useState<'search' | 'checkout' | 'payment' | 'done'>('search');
   const [lateStatus, setLateStatus] = useState<LateStatusResponse | null>(null);
 
@@ -105,14 +91,10 @@ export default function CheckOut() {
   const [damageReported, setDamage] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Factura
   const [billing, setBilling] = useState<BillingResponse | null>(null);
-
-  // Pagos
   const [payments, setPayments] = useState<PaymentLine[]>([{ method: 'CASH', amount: '' }]);
-  const [payingAll, setPayingAll] = useState(false);
 
-  // ── Búsqueda de reservas ──────────────────────────────────────────────────
+  // ── Búsqueda ──────────────────────────────────────────────────────────────
 
   const { data: searchResults = [], isFetching: searching } = useQuery<ReservationResponse[]>({
     queryKey: ['checkout-search', searchQuery, searchMode],
@@ -120,15 +102,12 @@ export default function CheckOut() {
       if (!searchQuery.trim()) return [];
       if (searchMode === 'phone') {
         const r = await apiClient.get(`/reservations/phone/${searchQuery.trim()}`);
-        const data = r.data;
-        // Filtramos solo CHECKED_IN
-        return (Array.isArray(data) ? data : [data]).filter(
+        return (Array.isArray(r.data) ? r.data : [r.data]).filter(
           (res: ReservationResponse) => res.status === 'CHECKED_IN'
         );
       } else {
         const r = await apiClient.get(`/reservations/number/${searchQuery.trim()}`);
-        const data = r.data;
-        const arr = Array.isArray(data) ? data : [data];
+        const arr = Array.isArray(r.data) ? r.data : [r.data];
         return arr.filter((res: ReservationResponse) => res.status === 'CHECKED_IN');
       }
     },
@@ -140,8 +119,6 @@ export default function CheckOut() {
   const handleSelectReservation = async (res: ReservationResponse) => {
     setReservation(res);
     setStep('checkout');
-
-    // Consultar late status
     try {
       const r = await apiClient.get(`/checkout/late-status/${res.id}`);
       setLateStatus(r.data as LateStatusResponse);
@@ -151,9 +128,9 @@ export default function CheckOut() {
     }
   };
 
-  // ── Mutación checkout ─────────────────────────────────────────────────────
+  // ── PASO 1: Preview → genera factura, NO cambia estado ───────────────────
 
-  const checkoutMutation = useMutation({
+  const previewMutation = useMutation({
     mutationFn: async () => {
       const body = {
         reservationId: reservation!.id,
@@ -170,40 +147,39 @@ export default function CheckOut() {
     onSuccess: (data) => {
       setBilling(data);
       setStep('payment');
-      // Pre-rellenar primer pago con el balance total
       setPayments([{ method: 'CASH', amount: String(Math.round(data.balanceDue)) }]);
     },
   });
 
-  // ── Mutación pago ─────────────────────────────────────────────────────────
+  // ── PASO 2: Registrar pagos ───────────────────────────────────────────────
 
   const paymentMutation = useMutation({
     mutationFn: async () => {
-      console.log('billing object:', billing);
-      console.log('billing.id:', billing!.billingId);
-
       const validPayments = payments.filter(p => p.amount && parseFloat(p.amount) > 0);
-
       for (const p of validPayments) {
-        const res = await apiClient.post('/billing/payment', {
+        await apiClient.post('/billing/payment', {
           billingId: billing!.billingId,
           amount: parseFloat(p.amount),
           method: p.method,
         });
-        console.log('Payment response:', res.data);
       }
-
       const r = await apiClient.get(`/billing/${billing!.billingId}`);
       return r.data as BillingResponse;
     },
-
-    onError: (e: any) => {
-      console.error('Payment error body:', e?.response?.data);
-      console.error('Payment error status:', e?.response?.status);
-    },
-
     onSuccess: (data) => {
       setBilling(data);
+      // Después de pagar, confirmar la salida
+      confirmMutation.mutate();
+    },
+  });
+
+  // ── PASO 3: Confirmar salida (solo cuando saldo = 0) ─────────────────────
+
+  const confirmMutation = useMutation({
+    mutationFn: async () => {
+      await apiClient.post(`/checkout/confirm/${reservation!.id}`);
+    },
+    onSuccess: () => {
       setStep('done');
     },
   });
@@ -211,48 +187,39 @@ export default function CheckOut() {
   // ── Cálculos de pago ──────────────────────────────────────────────────────
 
   const totalPaid = payments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
-  const pendingBalance = billing ? Math.max(0, billing.balanceDue - totalPaid) : 0;
-  const overpaid = billing && totalPaid > billing.balanceDue;
+  const balanceDue = billing?.balanceDue ?? 0;
+  const pendingBalance = Math.max(0, balanceDue - totalPaid);
+  const change = Math.max(0, totalPaid - balanceDue);
+  const paymentCoversBalance = totalPaid >= balanceDue && totalPaid > 0;
 
   const handleAddPayment = () => setPayments(prev => [...prev, { method: 'CASH', amount: '' }]);
   const handleRemovePayment = (i: number) => setPayments(prev => prev.filter((_, idx) => idx !== i));
   const handlePaymentChange = (i: number, field: keyof PaymentLine, value: string) => {
     setPayments(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: value } : p));
   };
-
   const handlePayAll = () => {
     if (!billing) return;
     setPayments([{ method: 'CASH', amount: String(Math.round(billing.balanceDue)) }]);
-    setPayingAll(true);
   };
 
   // ── Reset ─────────────────────────────────────────────────────────────────
 
   const handleReset = () => {
-    setSearchInput('');
-    setSearchQuery('');
-    setReservation(null);
-    setStep('search');
-    setLateStatus(null);
-    setApplyLate(false);
-    setLateCharge('');
-    setElectronic(false);
-    setInspection('');
-    setDamage('');
-    setNotes('');
-    setBilling(null);
+    setSearchInput(''); setSearchQuery(''); setReservation(null);
+    setStep('search'); setLateStatus(null); setApplyLate(false);
+    setLateCharge(''); setElectronic(false); setInspection('');
+    setDamage(''); setNotes(''); setBilling(null);
     setPayments([{ method: 'CASH', amount: '' }]);
-    setPayingAll(false);
-    checkoutMutation.reset();
-    paymentMutation.reset();
+    previewMutation.reset(); paymentMutation.reset(); confirmMutation.reset();
   };
+
+  const isProcessing = paymentMutation.isPending || confirmMutation.isPending;
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
 
-      {/* Encabezado */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-800">Check-out</h2>
@@ -273,23 +240,18 @@ export default function CheckOut() {
         <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
           <h3 className="font-semibold text-slate-700">Buscar reserva activa</h3>
 
-          {/* Tabs de modo */}
           <div className="flex bg-slate-100 rounded-lg p-1 w-fit gap-1">
             {(['phone', 'number'] as const).map(mode => (
               <button
                 key={mode}
                 onClick={() => { setSearchMode(mode); setSearchQuery(''); setSearchInput(''); }}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${searchMode === mode
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-                  }`}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${searchMode === mode ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 {mode === 'phone' ? 'Por teléfono' : 'Por número de reserva'}
               </button>
             ))}
           </div>
 
-          {/* Input de búsqueda */}
           <div className="flex gap-3">
             <input
               type="text"
@@ -308,10 +270,7 @@ export default function CheckOut() {
             </button>
           </div>
 
-          {/* Resultados */}
-          {searching && (
-            <p className="text-sm text-slate-400">Buscando...</p>
-          )}
+          {searching && <p className="text-sm text-slate-400">Buscando...</p>}
 
           {!searching && searchQuery && searchResults.length === 0 && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
@@ -331,17 +290,12 @@ export default function CheckOut() {
                     <div>
                       <p className="font-semibold text-slate-800">{res.guestName}</p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {res.reservationNumber} · {res.roomNumber ? `Hab. ${res.roomNumber}` : 'Sin hab. asignada'} · {res.numberOfNights} noche{res.numberOfNights !== 1 ? 's' : ''}
+                        {res.reservationNumber} · {res.roomNumber ? `Hab. ${res.roomNumber}` : 'Sin hab.'} · {res.numberOfNights} noche{res.numberOfNights !== 1 ? 's' : ''}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <span className="inline-block px-2.5 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
-                        Check-in activo
-                      </span>
-                      {res.guestHasObservations && (
-                        <p className="text-xs text-red-500 mt-1">⚠️ Tiene observaciones</p>
-                      )}
-                    </div>
+                    <span className="inline-block px-2.5 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
+                      Check-in activo
+                    </span>
                   </div>
                 </button>
               ))}
@@ -350,25 +304,20 @@ export default function CheckOut() {
         </div>
       )}
 
-      {/* ── PASO 2: DETALLES DE CHECKOUT ── */}
+      {/* ── PASO 2: OPCIONES DE CHECKOUT ── */}
       {step === 'checkout' && reservation && (
         <div className="space-y-4">
 
-          {/* Alerta late checkout */}
           {lateStatus?.isLate && (
-            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
-              <span className="text-red-500 text-xl mt-0.5">⏰</span>
-              <div>
-                <p className="font-semibold text-red-700 text-sm">Late checkout detectado</p>
-                <p className="text-xs text-red-600 mt-0.5">
-                  {lateStatus.minutesLate} minuto{lateStatus.minutesLate !== 1 ? 's' : ''} después de las 11:00 AM.
-                  El recepcionista decide si aplica multa.
-                </p>
-              </div>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <p className="font-semibold text-red-700 text-sm">Late checkout detectado</p>
+              <p className="text-xs text-red-600 mt-0.5">
+                {lateStatus.minutesLate} minuto{lateStatus.minutesLate !== 1 ? 's' : ''} después de la 1:00 PM.
+                El recepcionista decide si aplica multa.
+              </p>
             </div>
           )}
 
-          {/* Info de la reserva */}
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <h3 className="font-semibold text-slate-700 mb-4">Información de la estadía</h3>
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
@@ -384,22 +333,20 @@ export default function CheckOut() {
                 <InfoRow label="Total estimado" value={fmtCOP(reservation.estimatedTotal)} highlight />
               )}
               {reservation.depositAmount && reservation.depositAmount > 0 && (
-                <InfoRow label="Depósito pagado" value={fmtCOP(reservation.depositAmount)} />
+                <InfoRow label="Abono pagado" value={fmtCOP(reservation.depositAmount)} />
               )}
             </div>
-
             {reservation.guestHasObservations && (
               <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
-                ⚠️ Este huésped tiene observaciones registradas. Revisa el perfil antes de proceder.
+                Este huésped tiene observaciones registradas. Revisa el perfil antes de proceder.
               </div>
             )}
           </div>
 
-          {/* Opciones de checkout */}
           <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-5">
             <h3 className="font-semibold text-slate-700">Opciones de facturación</h3>
 
-            {/* Late checkout charge */}
+            {/* Late checkout */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -413,17 +360,13 @@ export default function CheckOut() {
                   <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${applyLate ? 'left-6' : 'left-1'}`} />
                 </button>
               </div>
-
               {applyLate && (
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-slate-500 shrink-0">Monto de la multa:</span>
                   <div className="relative flex-1 max-w-xs">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                     <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={lateCharge}
+                      type="number" min="0" placeholder="0" value={lateCharge}
                       onChange={e => setLateCharge(e.target.value)}
                       className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
                     />
@@ -450,47 +393,36 @@ export default function CheckOut() {
 
             <div className="border-t border-slate-100" />
 
-            {/* Notas opcionales */}
+            {/* Notas */}
             <div className="space-y-3">
               <p className="text-sm font-medium text-slate-700">Notas opcionales</p>
-              <textarea
-                rows={2}
-                placeholder="Inspección de habitación..."
-                value={inspectionNotes}
+              <textarea rows={2} placeholder="Inspección de habitación..." value={inspectionNotes}
                 onChange={e => setInspection(e.target.value)}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
-              <textarea
-                rows={2}
-                placeholder="Daños reportados (si aplica)..."
-                value={damageReported}
+              <textarea rows={2} placeholder="Daños reportados (si aplica)..." value={damageReported}
                 onChange={e => setDamage(e.target.value)}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
-              <textarea
-                rows={2}
-                placeholder="Observaciones generales..."
-                value={notes}
+              <textarea rows={2} placeholder="Observaciones generales..." value={notes}
                 onChange={e => setNotes(e.target.value)}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
             </div>
           </div>
 
-          {/* Error */}
-          {checkoutMutation.isError && (
+          {previewMutation.isError && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-              {(checkoutMutation.error as Error)?.message ?? 'Error al procesar el check-out. Intenta de nuevo.'}
+              {(previewMutation.error as any)?.response?.data?.error ?? 'Error al generar la factura. Intenta de nuevo.'}
             </div>
           )}
 
-          {/* Botón procesar */}
           <button
-            onClick={() => checkoutMutation.mutate()}
-            disabled={checkoutMutation.isPending || (applyLate && !lateCharge)}
+            onClick={() => previewMutation.mutate()}
+            disabled={previewMutation.isPending || (applyLate && !lateCharge)}
             className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white font-medium py-3 rounded-xl text-sm"
           >
-            {checkoutMutation.isPending ? 'Generando factura...' : 'Procesar check-out y generar factura →'}
+            {previewMutation.isPending ? 'Calculando factura...' : 'Ver factura y cobrar →'}
           </button>
         </div>
       )}
@@ -505,7 +437,6 @@ export default function CheckOut() {
               <h3 className="font-semibold text-slate-700">Resumen de factura</h3>
               <span className="text-xs text-slate-400">{billing.invoiceNumber}</span>
             </div>
-
             <div className="space-y-2 text-sm">
               <BillingRow label="Base (noches)" value={fmtCOP(billing.basePrice)} />
               {billing.additionalCharges > 0 && (
@@ -522,7 +453,7 @@ export default function CheckOut() {
               <div className="border-t border-slate-200 my-2" />
               <BillingRow label="Total" value={fmtCOP(billing.totalAmount)} bold />
               {billing.amountPaid > 0 && (
-                <BillingRow label="Depósito recibido" value={`-${fmtCOP(billing.amountPaid)}`} negative />
+                <BillingRow label="Abonos recibidos" value={`-${fmtCOP(billing.amountPaid)}`} negative />
               )}
               <div className="border-t border-slate-200 my-1" />
               <BillingRow label="Saldo a cobrar" value={fmtCOP(billing.balanceDue)} bold highlight />
@@ -537,7 +468,7 @@ export default function CheckOut() {
                 onClick={handlePayAll}
                 className="text-xs text-slate-600 border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg"
               >
-                Pagar todo en efectivo
+                Cobrar total en efectivo
               </button>
             </div>
 
@@ -553,35 +484,24 @@ export default function CheckOut() {
                       <option key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</option>
                     ))}
                   </select>
-
                   <div className="relative flex-1">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                     <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={p.amount}
+                      type="number" min="0" placeholder="0" value={p.amount}
                       onChange={e => handlePaymentChange(i, 'amount', e.target.value)}
                       className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
                     />
                   </div>
-
                   {payments.length > 1 && (
-                    <button
-                      onClick={() => handleRemovePayment(i)}
-                      className="text-slate-400 hover:text-red-500 text-lg leading-none px-1"
-                    >
-                      ×
-                    </button>
+                    <button onClick={() => handleRemovePayment(i)}
+                      className="text-slate-400 hover:text-red-500 text-lg leading-none px-1">×</button>
                   )}
                 </div>
               ))}
             </div>
 
-            <button
-              onClick={handleAddPayment}
-              className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"
-            >
+            <button onClick={handleAddPayment}
+              className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
               <span className="text-base leading-none">+</span> Agregar otro método de pago
             </button>
 
@@ -589,55 +509,73 @@ export default function CheckOut() {
             <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 space-y-1.5 text-sm">
               <div className="flex justify-between text-slate-600">
                 <span>Saldo a cobrar</span>
-                <span className="font-medium">{fmtCOP(billing.balanceDue)}</span>
+                <span className="font-medium">{fmtCOP(balanceDue)}</span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Total abonado ahora</span>
+                <span>Total recibido</span>
                 <span className="font-medium">{fmtCOP(totalPaid)}</span>
               </div>
-              <div className="border-t border-slate-200 pt-1.5 flex justify-between">
-                <span className={`font-semibold ${pendingBalance > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                  {pendingBalance > 0 ? 'Queda pendiente' : 'Pagado completamente'}
-                </span>
-                <span className={`font-semibold ${pendingBalance > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                  {pendingBalance > 0 ? fmtCOP(pendingBalance) : '✓'}
-                </span>
+              <div className="border-t border-slate-200 pt-1.5">
+                {pendingBalance > 0 && (
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-red-700">Falta por cobrar</span>
+                    <span className="font-semibold text-red-700">{fmtCOP(pendingBalance)}</span>
+                  </div>
+                )}
+                {pendingBalance === 0 && change === 0 && totalPaid > 0 && (
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-emerald-700">Pago exacto</span>
+                    <span className="font-semibold text-emerald-700">Sin cambio</span>
+                  </div>
+                )}
+                {change > 0 && (
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-blue-700">Cambio a devolver</span>
+                    <span className="font-semibold text-blue-700">{fmtCOP(change)}</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {overpaid && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700">
-                ⚠️ El total abonado supera el saldo. Revisa los montos.
-              </div>
-            )}
-
             {pendingBalance > 0 && totalPaid > 0 && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-xs text-amber-700">
-                El huésped quedará con un saldo pendiente de {fmtCOP(pendingBalance)}.
+              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                Faltan {fmtCOP(pendingBalance)} para completar el pago. El cliente debe cubrir el total antes de salir.
               </div>
             )}
-
-            {paymentMutation.isError && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700">
-                Error al registrar el pago. Intenta de nuevo.
-              </div>
-            )}
-
-            <button
-              onClick={() => paymentMutation.mutate()}
-              disabled={paymentMutation.isPending || overpaid === true || totalPaid <= 0}
-              className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white font-medium py-3 rounded-xl text-sm"
-            >
-              {paymentMutation.isPending ? 'Registrando pago...' : 'Registrar pago y finalizar →'}
-            </button>
 
             {totalPaid === 0 && (
-              <button
-                onClick={() => setStep('done')}
-                className="w-full border border-slate-300 text-slate-600 hover:bg-slate-50 font-medium py-2.5 rounded-xl text-sm"
-              >
-                Finalizar sin pago (saldo pendiente)
-              </button>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
+                Ingresa el monto recibido. El cliente debe cubrir el saldo completo para que se registre la salida.
+              </div>
+            )}
+
+            {(paymentMutation.isError || confirmMutation.isError) && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700">
+                {(paymentMutation.error as any)?.response?.data?.error
+                  ?? (confirmMutation.error as any)?.response?.data?.error
+                  ?? 'Error al registrar el pago. Intenta de nuevo.'}
+              </div>
+            )}
+
+            {/* Botón — bloqueado hasta que cubra el saldo */}
+            <button
+              onClick={() => paymentMutation.mutate()}
+              disabled={isProcessing || !paymentCoversBalance}
+              className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl text-sm"
+            >
+              {isProcessing
+                ? 'Procesando salida...'
+                : paymentCoversBalance
+                  ? change > 0
+                    ? `Registrar pago · Devolver ${fmtCOP(change)}`
+                    : 'Registrar pago y confirmar salida →'
+                  : 'Completa el pago para continuar'}
+            </button>
+
+            {!paymentCoversBalance && (
+              <p className="text-center text-xs text-slate-400">
+                La salida solo se confirma cuando el saldo quede en cero.
+              </p>
             )}
           </div>
         </div>
@@ -646,28 +584,22 @@ export default function CheckOut() {
       {/* ── PASO 4: CONFIRMACIÓN ── */}
       {step === 'done' && billing && reservation && (
         <div className="bg-white rounded-xl border border-emerald-200 p-8 text-center space-y-4">
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto text-3xl">
-            ✓
+          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+            <svg className="w-8 h-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-slate-800">Check-out completado</h3>
+            <h3 className="text-lg font-semibold text-slate-800">Salida confirmada</h3>
             <p className="text-sm text-slate-500 mt-1">
-              {reservation.guestName} ha salido · Hab. {reservation.roomNumber} → Sucia
+              {reservation.guestName} ha salido · Hab. {reservation.roomNumber} marcada como sucia
             </p>
           </div>
-
-          {/* Mini resumen final */}
           <div className="rounded-lg bg-slate-50 border border-slate-200 px-5 py-4 text-sm text-left space-y-2 max-w-sm mx-auto">
             <FinRow label="Factura" value={billing.invoiceNumber} />
-            <FinRow label="Total" value={fmtCOP(billing.totalAmount)} />
-            <FinRow label="Pagado" value={fmtCOP(billing.amountPaid)} />
-            <FinRow
-              label="Saldo pendiente"
-              value={billing.balanceDue > 0 ? fmtCOP(billing.balanceDue) : 'Ninguno'}
-              highlight={billing.balanceDue > 0}
-            />
+            <FinRow label="Total cobrado" value={fmtCOP(billing.totalAmount)} />
+            <FinRow label="Saldo pendiente" value="Ninguno" />
           </div>
-
           <div className="flex gap-3 justify-center pt-2">
             <button
               onClick={handleReset}
@@ -688,26 +620,18 @@ function InfoRow({ label, value, highlight }: { label: string; value: string; hi
   return (
     <div className="flex flex-col">
       <span className="text-xs text-slate-400 uppercase tracking-wide">{label}</span>
-      <span className={`mt-0.5 font-medium ${highlight ? 'text-slate-800 text-base' : 'text-slate-700'}`}>
-        {value}
-      </span>
+      <span className={`mt-0.5 font-medium ${highlight ? 'text-slate-800 text-base' : 'text-slate-700'}`}>{value}</span>
     </div>
   );
 }
 
-function BillingRow({
-  label, value, bold, negative, highlight,
-}: {
+function BillingRow({ label, value, bold, negative, highlight }: {
   label: string; value: string; bold?: boolean; negative?: boolean; highlight?: boolean;
 }) {
   return (
     <div className="flex justify-between">
       <span className={`text-slate-500 ${bold ? 'font-semibold text-slate-700' : ''}`}>{label}</span>
-      <span className={`
-        ${bold ? 'font-semibold' : ''}
-        ${negative ? 'text-emerald-600' : ''}
-        ${highlight ? 'text-slate-800 text-base' : 'text-slate-700'}
-      `}>
+      <span className={`${bold ? 'font-semibold' : ''} ${negative ? 'text-emerald-600' : ''} ${highlight ? 'text-slate-800 text-base' : 'text-slate-700'}`}>
         {value}
       </span>
     </div>

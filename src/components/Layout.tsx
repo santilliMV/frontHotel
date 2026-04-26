@@ -52,14 +52,11 @@ function AbrirTurnoModal({ username, onSuccess }: {
   const [expected, setExpected] = useState<number | null>(null);
   const [loadingExpected, setLoadingExpected] = useState(true);
 
-  // Al montar: consultar cuánto dejó el turno anterior
   useEffect(() => {
     const fetchExpected = async () => {
       try {
-        // Turnos de hoy
         const r = await apiClient.get('/shifts/today');
         const shifts: Shift[] = r.data;
-        // El último turno cerrado
         const lastClosed = shifts
           .filter(s => s.closedAt !== null && s.actualCashAmount !== null)
           .sort((a, b) => new Date(b.closedAt!).getTime() - new Date(a.closedAt!).getTime())[0];
@@ -68,13 +65,11 @@ function AbrirTurnoModal({ username, onSuccess }: {
           setExpected(lastClosed.actualCashAmount!);
           setAmount(String(Math.round(lastClosed.actualCashAmount!)));
         } else {
-          // Sin turno anterior — consultar base de caja del día
           try {
             const c = await apiClient.get('/cash/today');
             setExpected(c.data.baseAmount);
             setAmount(String(Math.round(c.data.baseAmount)));
           } catch {
-            // Caja no abierta aún
             setExpected(null);
           }
         }
@@ -114,7 +109,6 @@ function AbrirTurnoModal({ username, onSuccess }: {
           <p className="text-xs text-slate-400 mt-0.5">Bienvenido, {username}</p>
         </div>
 
-        {/* Efectivo esperado */}
         {loadingExpected ? (
           <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 mb-4 text-sm text-slate-400">
             Consultando turno anterior...
@@ -146,7 +140,6 @@ function AbrirTurnoModal({ username, onSuccess }: {
           />
         </div>
 
-        {/* Diferencia si el monto ingresado difiere del esperado */}
         {expected !== null && amount && Math.abs(parseFloat(amount) - expected) > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 mb-4 text-sm text-amber-700">
             ⚠ Diferencia de {fmtCOP(Math.abs(parseFloat(amount) - expected))} con el turno anterior
@@ -225,7 +218,6 @@ function CerrarTurnoModal({ shift, onSuccess, onCancel }: {
         <h2 className="text-lg font-semibold text-slate-800 mb-1">Cerrar turno</h2>
         <p className="text-sm text-slate-400 mb-5">Duración: {duration()}</p>
 
-        {/* Resumen del turno */}
         <div className="bg-slate-50 border border-slate-100 rounded-xl divide-y divide-slate-100 mb-5 text-sm">
           {[
             ['Monto base recibido', fmtCOP(shift.baseAmount)],
@@ -350,24 +342,25 @@ export default function Layout() {
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
 
-      <aside className="w-56 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+      {/* ── Sidebar oscuro ── */}
+      <aside className="w-56 bg-[#1e1e1c] border-r border-[#323230] flex flex-col flex-shrink-0">
 
-        <div className="px-5 py-5 border-b border-slate-200">
-          <h1 className="text-base font-semibold text-slate-800">Hotel Santiago</h1>
-          <p className="text-xs text-slate-500 mt-0.5">{user?.fullName}</p>
-          <span className="inline-block mt-1 text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">
+        <div className="px-5 py-5 border-b border-[#323230]">
+          <h1 className="text-base font-semibold text-white">Hotel Santiago</h1>
+          <p className="text-xs text-[#a8a79f] mt-0.5">{user?.fullName}</p>
+          <span className="inline-block mt-1 text-xs bg-[#2c2c2a] text-[#a8a79f] px-2 py-0.5 rounded font-medium">
             {isAdmin ? 'Administrador' : 'Recepcionista'}
           </span>
           {!isAdmin && activeShift && (
             <div className="flex items-center gap-1.5 mt-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span className="text-xs text-emerald-600 font-medium">Turno activo</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="text-xs text-emerald-400 font-medium">Turno activo</span>
             </div>
           )}
           {!isAdmin && !activeShift && shiftChecked && (
             <div className="flex items-center gap-1.5 mt-2">
               <div className="w-1.5 h-1.5 rounded-full bg-red-400" />
-              <span className="text-xs text-red-500 font-medium">Sin turno</span>
+              <span className="text-xs text-red-400 font-medium">Sin turno</span>
             </div>
           )}
         </div>
@@ -377,7 +370,9 @@ export default function Layout() {
             <NavLink key={item.path} to={item.path} end={item.exact}
               className={({ isActive }) =>
                 `block px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isActive ? 'bg-slate-800 text-white font-medium' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+                  isActive
+                    ? 'bg-[#383836] text-white font-medium'
+                    : 'text-[#a8a79f] hover:bg-[#2a2a28] hover:text-white'
                 }`}>
               {item.label}
             </NavLink>
@@ -386,13 +381,15 @@ export default function Layout() {
           {isAdmin && (
             <>
               <div className="pt-4 pb-1 px-3">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Administracion</p>
+                <p className="text-xs font-semibold text-[#636360] uppercase tracking-wider">Administracion</p>
               </div>
               {adminItems.map((item) => (
                 <NavLink key={item.path} to={item.path}
                   className={({ isActive }) =>
                     `block px-3 py-2 rounded-lg text-sm transition-colors ${
-                      isActive ? 'bg-slate-800 text-white font-medium' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+                      isActive
+                        ? 'bg-[#383836] text-white font-medium'
+                        : 'text-[#a8a79f] hover:bg-[#2a2a28] hover:text-white'
                     }`}>
                   {item.label}
                 </NavLink>
@@ -401,15 +398,15 @@ export default function Layout() {
           )}
         </nav>
 
-        <div className="px-3 py-4 border-t border-slate-200 space-y-1">
+        <div className="px-3 py-4 border-t border-[#323230] space-y-1">
           {!isAdmin && activeShift && (
-            <div className="px-3 py-2 text-xs text-slate-400 bg-slate-50 rounded-lg">
+            <div className="px-3 py-2 text-xs text-[#a8a79f] bg-[#2a2a28] rounded-lg">
               Turno desde{' '}
               {new Date(activeShift.openedAt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
             </div>
           )}
           <button onClick={handleLogout}
-            className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors">
+            className="w-full text-left px-3 py-2 rounded-lg text-sm text-[#a8a79f] hover:bg-[#2a2a28] hover:text-red-400 transition-colors">
             {!isAdmin && activeShift ? 'Cerrar turno y salir' : 'Cerrar sesión'}
           </button>
         </div>

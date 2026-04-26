@@ -6,6 +6,7 @@ import type {
   AvailableRoom, RoomTypeOption, CompanionRequest, PriceResponse,
 } from '../api/hotel-api';
 import { COLOMBIA_CITIES, COUNTRIES, DOC_TYPES, DOC_TYPES_SHORT, PAYMENT_METHODS } from '../constants';
+import apiClient from '../api/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,66 @@ function validateReservationPayload(payload: {
   return null;
 }
 
+const verifyAdminPassword = async (password: string): Promise<boolean> => {
+  try {
+    const res = await apiClient.post('/admin/verify-password', { password });
+    return res.data?.valid === true;
+  } catch {
+    return false;
+  }
+};
+
+// ─── AdminPasswordModal ───────────────────────────────────────────────────────
+
+function AdminPasswordModal({ title, description, onConfirm, onCancel }: {
+  title: string;
+  description: string;
+  onConfirm: (password: string) => void;
+  onCancel: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!password) { setError('Ingresa la clave de administrador'); return; }
+    setLoading(true); setError('');
+    const valid = await verifyAdminPassword(password);
+    setLoading(false);
+    if (!valid) { setError('Clave incorrecta'); return; }
+    onConfirm(password);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <h2 className="text-lg font-bold text-slate-800 mb-1">{title}</h2>
+        <p className="text-sm text-slate-500 mb-5">{description}</p>
+        <label className="text-xs text-slate-500 mb-1 block">Clave de administrador</label>
+        <input
+          type="password"
+          autoFocus
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 mb-3"
+          placeholder="••••••••"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+        />
+        {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+            Cancelar
+          </button>
+          <button onClick={handleSubmit} disabled={loading}
+            className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg">
+            {loading ? '⟳ Verificando…' : 'Confirmar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── EarlyModal ───────────────────────────────────────────────────────────────
 
 function EarlyModal({ onSelect, onCancel }: {
@@ -80,19 +141,18 @@ function EarlyModal({ onSelect, onCancel }: {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
         <span className="inline-block bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full border border-blue-200 mb-3">
-          🌙 Early Check-in — {now.toTimeString().slice(0, 5)}
+          Early Check-in — {now.toTimeString().slice(0, 5)}
         </span>
         <h2 className="text-lg font-bold text-slate-800 mb-1">¿Qué noche se cobra?</h2>
         <p className="text-sm text-slate-500 mb-5">El cliente llega antes de las 7:00 AM. Selecciona la noche a facturar:</p>
         <div className="flex flex-col gap-3">
           {[
-            { opt: 'PREVIOUS_NIGHT' as const, icon: '📅', label: 'Noche anterior', sub: dn(prev) },
-            { opt: 'CURRENT_NIGHT' as const, icon: '🌅', label: 'Noche actual', sub: dn(now) },
-          ].map(({ opt, icon, label, sub }) => (
+            { opt: 'PREVIOUS_NIGHT' as const, label: 'Noche anterior', sub: dn(prev) },
+            { opt: 'CURRENT_NIGHT' as const, label: 'Noche actual', sub: dn(now) },
+          ].map(({ opt, label, sub }) => (
             <button key={opt}
               onClick={() => onSelect(opt)}
               className="flex items-center gap-3 border border-slate-200 rounded-xl p-4 hover:border-slate-800 hover:bg-slate-50 transition-all text-left">
-              <span className="text-2xl">{icon}</span>
               <div className="flex-1">
                 <span className="block font-semibold text-slate-800 text-sm">{label}</span>
                 <span className="text-xs text-slate-500">{sub}</span>
@@ -111,14 +171,14 @@ function EarlyModal({ onSelect, onCancel }: {
 
 // ─── SuccessScreen ────────────────────────────────────────────────────────────
 
-function SuccessScreen({ result, payments, totalPaid, onReset }: {
-  result: CheckInResponse; payments: PaymentEntry[]; totalPaid: number; onReset: () => void;
+function SuccessScreen({ result, payments, totalPaid, isCourtesy, onReset }: {
+  result: CheckInResponse; payments: PaymentEntry[]; totalPaid: number; isCourtesy: boolean; onReset: () => void;
 }) {
   const validPayments = payments.filter(p => parseFloat(p.amount) > 0);
   return (
     <div className="text-center py-4">
       <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 border-4 border-emerald-200">✓</div>
-      <h2 className="text-xl font-bold text-slate-800 mb-6">¡Check-in completado!</h2>
+      <h2 className="text-xl font-bold text-slate-800 mb-6">Check-in completado</h2>
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 text-left max-w-sm mx-auto mb-6">
         <div className="text-3xl font-black text-slate-800 tracking-tight">HAB {result.roomNumber}</div>
         <div className="text-sm text-slate-500 mb-4">{result.roomTypeName} · Piso {result.floor}</div>
@@ -127,9 +187,10 @@ function SuccessScreen({ result, payments, totalPaid, onReset }: {
             ['Huésped', result.guestName],
             ['Teléfono', result.guestPhone],
             ['Reserva', result.reservationNumber],
-            ['Toallas', `${result.towelsDelivered} 🛁`],
+            ['Toallas', `${result.towelsDelivered}`],
             ['Hora entrada', new Date(result.checkInDateTime).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })],
-            ...(result.isEarlyCheckIn ? [['Early check-in', result.earlyCheckInOption === 'PREVIOUS_NIGHT' ? '🌙 Noche anterior' : '🌅 Noche actual']] : []),
+            ...(result.isEarlyCheckIn ? [['Early check-in', result.earlyCheckInOption === 'PREVIOUS_NIGHT' ? 'Noche anterior' : 'Noche actual']] : []),
+            ...(isCourtesy ? [['Cortesía', 'Autorizada — sin cobro']] : []),
           ].map(([k, v]) => (
             <div key={k} className="flex justify-between items-center">
               <span className="text-xs text-slate-500">{k}</span>
@@ -137,7 +198,7 @@ function SuccessScreen({ result, payments, totalPaid, onReset }: {
             </div>
           ))}
         </div>
-        {validPayments.length > 0 && (
+        {!isCourtesy && validPayments.length > 0 && (
           <div className="border-t border-slate-200 mt-3 pt-3 space-y-2">
             {validPayments.map((p, i) => (
               <div key={i} className="flex justify-between">
@@ -151,7 +212,7 @@ function SuccessScreen({ result, payments, totalPaid, onReset }: {
             </div>
           </div>
         )}
-        {validPayments.length === 0 && (
+        {!isCourtesy && validPayments.length === 0 && (
           <div className="border-t border-slate-200 mt-3 pt-3 flex justify-between">
             <span className="text-xs text-slate-500">Pago</span>
             <span className="text-sm text-amber-600 font-medium">Sin abono — queda debiendo</span>
@@ -233,13 +294,13 @@ function CreateGuestModal({ onCreated, onCancel }: {
             <div><label className={fl}>Ocupación</label><input className={fi} placeholder="Comerciante" value={form.occupation ?? ''} onChange={e => set('occupation', e.target.value)} /></div>
             <div><label className={fl}>Placa vehículo</label><input className={fi} placeholder="ABC-123" value={form.vehiclePlate ?? ''} onChange={e => set('vehiclePlate', e.target.value)} /></div>
           </div>
-          <div><label className={fl}>⚠ Observaciones</label>
+          <div><label className={fl}>Observaciones</label>
             <textarea className={fi} rows={2} placeholder="No arrendar, cliente problemático…"
               value={form.observations ?? ''} onChange={e => set('observations', e.target.value)}
               style={{ resize: 'vertical' }} />
           </div>
         </div>
-        {error && <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">⚠ {error}</div>}
+        {error && <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
         <div className="flex justify-end gap-3 mt-5">
           <button onClick={onCancel} className="px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
@@ -270,7 +331,6 @@ function PriceBox({ price, loading }: { price: PriceResponse | null; loading: bo
           {price.numberOfGuests > 1 ? ` · ${price.numberOfGuests} personas` : ''}
         </div>
       </div>
-      <span className="text-2xl">💰</span>
     </div>
   );
 }
@@ -313,8 +373,19 @@ export default function CheckIn() {
   // Companions
   const [companions, setCompanions] = useState<CompanionRequest[]>([]);
 
-  // Payment
+  // Payment extras
   const [payments, setPayments] = useState<PaymentEntry[]>([{ method: 'CASH', amount: '' }]);
+  const [electronicInvoice, setElectronicInvoice] = useState(false);
+  const [discountAmount, setDiscountAmount] = useState('');
+  const [discountReason, setDiscountReason] = useState('');
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [discountApproved, setDiscountApproved] = useState(false);
+  const [additionalCharge, setAdditionalCharge] = useState('');
+  const [additionalChargeReason, setAdditionalChargeReason] = useState('');
+  const [isCourtesy, setIsCourtesy] = useState(false);
+  const [showCourtesyModal, setShowCourtesyModal] = useState(false);
+  const [courtesyReason, setCourtesyReason] = useState('');
+  const [courtesyApproved, setCourtesyApproved] = useState(false);
 
   // Submit
   const [submitting, setSubmitting] = useState(false);
@@ -322,35 +393,65 @@ export default function CheckIn() {
   const [showEarlyModal, setShowEarlyModal] = useState(false);
   const [earlyOption, setEarlyOption] = useState<'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | null>(null);
   const [result, setResult] = useState<CheckInResponse | null>(null);
+  const prefillRoomIdRef = useRef<string | undefined>(prefill?.roomId);
+
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { roomsApi.getTypes().then(setRoomTypes).catch(() => { }); }, []);
 
+  // Cargar habitaciones y pre-seleccionar la del prefill
   useEffect(() => {
     if (!selectedRoomTypeId) { setFilteredRooms([]); return; }
     setRoomsLoading(true);
     const fetchFn = fromPlanilla ? roomsApi.getAvailableOrReservedByType : roomsApi.getAvailableByType;
-    fetchFn(selectedRoomTypeId).then(setFilteredRooms).catch(() => setFilteredRooms([])).finally(() => setRoomsLoading(false));
+    fetchFn(selectedRoomTypeId)
+      .then(rooms => {
+        setFilteredRooms(rooms);
+        const roomToSelect = prefillRoomIdRef.current;
+        if (roomToSelect && rooms.some(r => r.id === roomToSelect)) {
+          setSelectedRoomId(roomToSelect);
+        }
+      })
+      .catch(() => setFilteredRooms([]))
+      .finally(() => setRoomsLoading(false));
   }, [selectedRoomTypeId, fromPlanilla]);
 
+  // Calcular precio con ajuste early check-in
   useEffect(() => {
     if (!selectedRoomTypeId || !checkInDate || !checkOutDate || nightCount(checkInDate, checkOutDate) <= 0) { setPriceData(null); return; }
     if (priceDebounceRef.current) clearTimeout(priceDebounceRef.current);
     priceDebounceRef.current = setTimeout(async () => {
       setPriceLoading(true);
-      try { setPriceData(await roomsApi.getPrice({ roomTypeId: selectedRoomTypeId, occupantType, checkIn: checkInDate, checkOut: checkOutDate, numberOfGuests })); }
+      try {
+        const currentHour = new Date().getHours();
+        setPriceData(await roomsApi.getPrice({
+          roomTypeId: selectedRoomTypeId,
+          occupantType,
+          checkIn: checkInDate,
+          checkOut: checkOutDate,
+          numberOfGuests,
+          checkInHour: currentHour < 7 ? currentHour : undefined,
+        }));
+      }
       catch { setPriceData(null); }
       finally { setPriceLoading(false); }
     }, 600);
   }, [selectedRoomTypeId, occupantType, checkInDate, checkOutDate, numberOfGuests]);
 
   useEffect(() => { setTowels(numberOfGuests); }, [numberOfGuests]);
+
+  // Sincronizar occupantType y restricciones de personas
   useEffect(() => {
-    if (numberOfGuests === 1) setOccupantType('INDIVIDUAL');
-    else if (numberOfGuests === 2) setOccupantType('PAREJA');
-    else setOccupantType('MULTIPLE_PERSON');
-  }, [numberOfGuests]);
+    if (occupantType === 'INDIVIDUAL') {
+      setNumberOfGuests(1);
+    } else if (occupantType === 'PAREJA') {
+      setNumberOfGuests(2);
+    } else if (occupantType === 'MULTIPLE_PERSON') {
+      if (numberOfGuests < 2) setNumberOfGuests(2);
+    }
+  }, [occupantType]);
+
   useEffect(() => { if (occupantType === 'INDIVIDUAL') setCompanions([]); }, [occupantType]);
 
   useEffect(() => {
@@ -364,11 +465,19 @@ export default function CheckIn() {
     }, 350);
   }, [guestQuery]);
 
-  const nights = nightCount(checkInDate, checkOutDate);
-  const totalPrice = priceData?.totalPrice ?? 0;
+  // ─── Cálculos de precio final ─────────────────────────────────────────────
+
+  const basePrice = isCourtesy ? 0 : (priceData?.totalPrice ?? 0);
+  const discountValue = discountApproved ? (parseFloat(discountAmount) || 0) : 0;
+  const additionalValue = parseFloat(additionalCharge) || 0;
+  const subtotal = Math.max(0, basePrice + additionalValue - discountValue);
+  const ivaAmount = electronicInvoice ? Math.round(subtotal * 0.19) : 0;
+  const totalFinal = subtotal + ivaAmount;
   const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   const hasPaidSomething = totalPaid > 0;
-  const overLimit = totalPrice > 0 && totalPaid > totalPrice;
+  const overLimit = !isCourtesy && totalFinal > 0 && totalPaid > totalFinal;
+
+  const nights = nightCount(checkInDate, checkOutDate);
 
   const addPaymentLine = () => setPayments(p => [...p, { method: 'CASH', amount: '' }]);
   const removePaymentLine = (i: number) => setPayments(p => p.filter((_, idx) => idx !== i));
@@ -381,16 +490,12 @@ export default function CheckIn() {
   const removeCompanion = (i: number) => setCompanions(c => c.filter((_, idx) => idx !== i));
 
   const handleConfirm = () => {
-    if (overLimit) { setSubmitError(`El abono (${fmtCOP(totalPaid)}) supera el total (${fmtCOP(totalPrice)})`); return; }
+    if (overLimit) { setSubmitError(`El abono (${fmtCOP(totalPaid)}) supera el total (${fmtCOP(totalFinal)})`); return; }
     if (isEarlyHour() && !earlyOption) { setShowEarlyModal(true); return; }
     executeCheckIn(earlyOption);
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
-// REEMPLAZAR executeCheckIn en CheckIn.tsx
-// ═══════════════════════════════════════════════════════════════════════════
-
-const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | null) => {
+  const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | null) => {
     if (!selectedGuest || !selectedRoomTypeId || !selectedRoomId) return;
     setSubmitting(true); setSubmitError('');
 
@@ -406,31 +511,34 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
       if (existingReservationId) {
         reservationId = existingReservationId;
       } else {
-        // Construir lista de pagos válidos
         const validPayments = payments
           .filter(p => parseFloat(p.amount) > 0)
           .map(p => ({ method: p.method, amount: parseFloat(p.amount) }));
 
-        const totalDeposit = validPayments.reduce((sum, p) => sum + p.amount, 0);
+        const totalDeposit = isCourtesy ? 0 : validPayments.reduce((sum, p) => sum + p.amount, 0);
 
         const reservation = await checkInApi.createReservation({
-          guestId:        selectedGuest.id,
-          firstName:      selectedGuest.firstName,
-          lastName:       selectedGuest.lastName ?? undefined,
-          phone:          selectedGuest.phone,
-          roomTypeId:     selectedRoomTypeId,
-          roomId:         selectedRoomId,
+          guestId:         selectedGuest.id,
+          firstName:       selectedGuest.firstName,
+          lastName:        selectedGuest.lastName ?? undefined,
+          phone:           selectedGuest.phone,
+          roomTypeId:      selectedRoomTypeId,
+          roomId:          selectedRoomId,
           checkInDate,
           checkOutDate,
           numberOfGuests,
           occupantType,
-          companions:     companions.filter(c => c.name?.trim()),
-          // Total del depósito
-          depositAmount:  totalDeposit > 0 ? totalDeposit : undefined,
-          // Primer método (para compatibilidad)
-          depositMethod:  validPayments.length > 0 ? validPayments[0].method : undefined,
-          // Lista completa de pagos (nuevo campo)
+          companions:      companions.filter(c => c.name?.trim()),
+          depositAmount:   totalDeposit > 0 ? totalDeposit : undefined,
+          depositMethod:   validPayments.length > 0 ? validPayments[0].method : undefined,
           depositPayments: validPayments.length > 0 ? validPayments : undefined,
+          requiresElectronicInvoice: electronicInvoice,
+          discountAmount:  discountApproved && discountValue > 0 ? discountValue : undefined,
+          discountReason:  discountApproved && discountValue > 0 ? discountReason : undefined,
+          additionalCharge: additionalValue > 0 ? additionalValue : undefined,
+          additionalChargeReason: additionalValue > 0 ? additionalChargeReason : undefined,
+          isCourtesy:      isCourtesy,
+          courtesyReason:  isCourtesy ? courtesyReason : undefined,
         });
         reservationId = reservation.id as string;
       }
@@ -462,6 +570,9 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
     setNumberOfGuests(1); setOccupantType('INDIVIDUAL'); setTowels(1);
     setCompanions([]); setPayments([{ method: 'CASH', amount: '' }]);
     setPriceData(null); setEarlyOption(null); setSubmitError(''); setResult(null);
+    setElectronicInvoice(false); setDiscountAmount(''); setDiscountReason('');
+    setDiscountApproved(false); setAdditionalCharge(''); setAdditionalChargeReason('');
+    setIsCourtesy(false); setCourtesyReason(''); setCourtesyApproved(false);
     navigate('/checkin', { replace: true, state: {} });
   };
 
@@ -472,7 +583,11 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
   const roomNumber = filteredRooms.find(r => r.id === selectedRoomId)?.roomNumber ?? '';
   const hasPrefill = !!prefill?.roomTypeId;
 
-  // ─── Clases comunes ──────────────────────────────────────────────────────────
+  // Opciones de número de personas según occupantType
+  const guestOptions = occupantType === 'INDIVIDUAL' ? [1]
+    : occupantType === 'PAREJA' ? [2]
+    : [2, 3, 4, 5, 6];
+
   const fi = "w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 placeholder:text-slate-400";
   const fl = "text-xs text-slate-500 mb-1 block";
   const btn = "px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white text-sm font-semibold rounded-xl transition-colors";
@@ -516,7 +631,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
 
           {hasPrefill && (
             <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 mb-4 text-sm text-emerald-700">
-              ✓ Datos de habitación pre-cargados desde la planilla. Solo selecciona el huésped.
+              Datos de habitación pre-cargados desde la planilla. Solo selecciona el huésped.
             </div>
           )}
 
@@ -524,7 +639,6 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
             <>
               {selectedGuest.hasObservations && (
                 <div className="flex gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-3">
-                  <span>⚠️</span>
                   <div>
                     <strong className="text-red-700 text-sm block">Huésped con observaciones</strong>
                     <p className="text-red-600 text-xs mt-0.5">{selectedGuest.observations}</p>
@@ -539,8 +653,8 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
                   <div>
                     <div className="text-sm font-semibold text-slate-800">{selectedGuest.fullName}</div>
                     <div className="text-xs text-slate-500 mt-0.5">
-                      📞 {selectedGuest.phone}
-                      {selectedGuest.documentNumber && ` · 🪪 ${selectedGuest.documentType} ${selectedGuest.documentNumber}`}
+                      {selectedGuest.phone}
+                      {selectedGuest.documentNumber && ` · ${selectedGuest.documentType} ${selectedGuest.documentNumber}`}
                     </div>
                   </div>
                 </div>
@@ -574,10 +688,10 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
                       <div className="flex-1">
                         <div className="text-sm font-semibold text-slate-800">
                           {g.fullName}
-                          {g.hasObservations && <span className="ml-2 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">⚠ Obs.</span>}
+                          {g.hasObservations && <span className="ml-2 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Obs.</span>}
                         </div>
                         <div className="text-xs text-slate-500 mt-0.5">
-                          📞 {g.phone}
+                          {g.phone}
                           {g.documentNumber && ` · ${g.documentType} ${g.documentNumber}`}
                           {g.city && ` · ${g.city}`}
                         </div>
@@ -621,7 +735,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
 
           {hasPrefill && (
             <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 mb-4 text-sm text-emerald-700">
-              ✓ Datos pre-cargados desde la planilla. Puedes modificarlos si es necesario.
+              Datos pre-cargados desde la planilla. Puedes modificarlos si es necesario.
             </div>
           )}
 
@@ -644,26 +758,30 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
 
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div><label className={fl}>Fecha entrada</label>
-              <input type="date" className={fi} value={checkInDate} min={today()} onChange={e => setCheckInDate(e.target.value)} /></div>
+              <input type="date" className={fi} value={checkInDate} onChange={e => setCheckInDate(e.target.value)} /></div>
             <div><label className={fl}>Fecha salida</label>
               <input type="date" className={fi} value={checkOutDate} min={checkInDate} onChange={e => setCheckOutDate(e.target.value)} /></div>
           </div>
 
           {nights > 0 && (
             <div className="inline-block bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg mb-4">
-              🌙 {nights} noche{nights !== 1 ? 's' : ''}
+              {nights} noche{nights !== 1 ? 's' : ''}
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3 mb-4">
-            <div><label className={fl}>Número de personas</label>
-              <select className={fi} value={numberOfGuests} onChange={e => setNumberOfGuests(Number(e.target.value))}>
-                {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} persona{n !== 1 ? 's' : ''}</option>)}
-              </select>
-            </div>
-            <div><label className={fl}>Tipo ocupante</label>
+            <div>
+              <label className={fl}>Tipo ocupante</label>
               <select className={fi} value={occupantType} onChange={e => setOccupantType(e.target.value as typeof occupantType)}>
                 {Object.entries(OCCUPANT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={fl}>Número de personas</label>
+              <select className={fi} value={numberOfGuests}
+                onChange={e => setNumberOfGuests(Number(e.target.value))}
+                disabled={occupantType === 'INDIVIDUAL' || occupantType === 'PAREJA'}>
+                {guestOptions.map(n => <option key={n} value={n}>{n} persona{n !== 1 ? 's' : ''}</option>)}
               </select>
             </div>
           </div>
@@ -678,7 +796,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
                 <button onClick={() => setTowels(t => t + 1)}
                   className="w-9 h-9 border border-slate-200 rounded-r-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-lg flex items-center justify-center">+</button>
               </div>
-              <span className="text-sm text-slate-500">🛁 {towels} toalla{towels !== 1 ? 's' : ''}</span>
+              <span className="text-sm text-slate-500">{towels} toalla{towels !== 1 ? 's' : ''}</span>
             </div>
           </div>
 
@@ -689,7 +807,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
                 <p className="text-slate-400 text-sm py-2">Cargando habitaciones…</p>
               ) : filteredRooms.length === 0 ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-amber-700 text-sm">
-                  ⚠ No hay habitaciones disponibles del tipo {roomTypeName}.
+                  No hay habitaciones disponibles del tipo {roomTypeName}.
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -709,8 +827,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
                           {r.status === 'RESERVED' && <span className="ml-2 text-purple-600 font-semibold">· Pre-asignada</span>}
                         </div>
                       </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${selectedRoomId === r.id ? 'bg-slate-800 border-slate-800 text-white' : 'border-slate-300'
-                        }`}>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${selectedRoomId === r.id ? 'bg-slate-800 border-slate-800 text-white' : 'border-slate-300'}`}>
                         {selectedRoomId === r.id ? '✓' : ''}
                       </div>
                     </div>
@@ -734,7 +851,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
 
           {occupantType === 'INDIVIDUAL' ? (
             <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm text-slate-500 text-center">
-              🚫 Habitación individual — no se registran acompañantes.
+              Habitación individual — no se registran acompañantes.
             </div>
           ) : (
             <>
@@ -781,12 +898,13 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
       {/* ── PASO 4: Pago ─────────────────────────────────────────────────────── */}
       {step === 'payment' && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">4. Pago</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">4. Pago y ajustes</p>
 
-          {priceData && (
+          {/* Precio base */}
+          {priceData && !isCourtesy && (
             <div className="flex justify-between items-center bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4">
               <div>
-                <div className="text-xs text-slate-500 mb-0.5">Total de la estadía</div>
+                <div className="text-xs text-slate-500 mb-0.5">Precio base estadía</div>
                 <div className="text-2xl font-black text-slate-800">{fmtCOP(priceData.totalPrice)}</div>
               </div>
               <div className="text-right text-xs text-slate-400">
@@ -796,44 +914,165 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
             </div>
           )}
 
-          <p className="text-sm text-slate-500 mb-4">Registra el pago o abono. Puedes usar múltiples métodos.</p>
-
-          {payments.map((p, i) => (
-            <div key={i} className="grid grid-cols-2 gap-3 mb-3 items-end">
-              <div><label className={fl}>Método de pago</label>
-                <select className={fi} value={p.method} onChange={e => updatePayment(i, 'method', e.target.value)}>
-                  {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-2 items-end">
-                <div className="flex-1"><label className={fl}>Monto</label>
-                  <input className={fi} type="number" min="0" placeholder="0"
-                    value={p.amount} onChange={e => updatePayment(i, 'amount', e.target.value)} />
+          {/* Cortesía */}
+          <div className="mb-4">
+            {!courtesyApproved ? (
+              <button
+                onClick={() => setShowCourtesyModal(true)}
+                className="w-full py-3 border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl text-sm text-slate-500 hover:text-emerald-700 transition-all">
+                + Aplicar cortesía (requiere clave admin)
+              </button>
+            ) : (
+              <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-emerald-700">Cortesía autorizada</div>
+                  {courtesyReason && <div className="text-xs text-emerald-600 mt-0.5">{courtesyReason}</div>}
+                  <div className="text-xs text-emerald-600 mt-0.5">Estadía sin cobro</div>
                 </div>
-                {payments.length > 1 && (
-                  <button onClick={() => removePaymentLine(i)} className="text-slate-400 hover:text-red-500 text-xl pb-2 leading-none">×</button>
-                )}
+                <button onClick={() => { setCourtesyApproved(false); setIsCourtesy(false); setCourtesyReason(''); }}
+                  className="text-xs border border-emerald-300 px-2 py-1 rounded text-emerald-700 hover:bg-emerald-100">
+                  Quitar
+                </button>
               </div>
-            </div>
-          ))}
-
-          <button onClick={addPaymentLine}
-            className="w-full py-2.5 border border-dashed border-slate-300 hover:border-slate-400 rounded-xl text-sm text-slate-500 hover:text-slate-700 transition-all mb-4">
-            + Agregar otro método de pago
-          </button>
-
-          <div className={`flex justify-between items-center border rounded-xl px-4 py-3 ${overLimit ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
-            <div>
-              <div className="text-xs text-slate-500">Total abonado</div>
-              {overLimit && <div className="text-xs text-red-600 mt-0.5">⚠ Supera el total ({fmtCOP(totalPrice)})</div>}
-            </div>
-            <div className={`text-lg font-bold ${overLimit ? 'text-red-600' : 'text-slate-800'}`}>{fmtCOP(totalPaid)}</div>
+            )}
           </div>
 
-          {!hasPaidSomething && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-amber-700 text-sm mt-3">
-              ⚠ Sin abono — el huésped quedará con saldo pendiente al checkout.
-            </div>
+          {!isCourtesy && (
+            <>
+              {/* Cobro adicional */}
+              <div className="mb-4 border border-slate-200 rounded-xl p-4">
+                <p className="text-xs font-semibold text-slate-600 mb-3">Cobro adicional</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={fl}>Monto adicional</label>
+                    <input className={fi} type="number" min="0" placeholder="0"
+                      value={additionalCharge} onChange={e => setAdditionalCharge(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={fl}>Motivo</label>
+                    <input className={fi} placeholder="Descripción del cobro"
+                      value={additionalChargeReason} onChange={e => setAdditionalChargeReason(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Descuento */}
+              <div className="mb-4">
+                {!discountApproved ? (
+                  <button
+                    onClick={() => setShowDiscountModal(true)}
+                    className="w-full py-3 border-2 border-dashed border-slate-200 hover:border-amber-400 rounded-xl text-sm text-slate-500 hover:text-amber-700 transition-all">
+                    + Aplicar descuento (requiere clave admin)
+                  </button>
+                ) : (
+                  <div className="border border-slate-200 rounded-xl p-4">
+                    <div className="flex justify-between items-center mb-3">
+                      <p className="text-xs font-semibold text-slate-600">Descuento aprobado</p>
+                      <button onClick={() => { setDiscountApproved(false); setDiscountAmount(''); setDiscountReason(''); }}
+                        className="text-xs text-slate-400 hover:text-red-500">Quitar</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={fl}>Monto descuento</label>
+                        <input className={fi} type="number" min="0" placeholder="0"
+                          value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className={fl}>Motivo</label>
+                        <input className={fi} placeholder="Razón del descuento"
+                          value={discountReason} onChange={e => setDiscountReason(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Factura electrónica */}
+              <div className="mb-4 border border-slate-200 rounded-xl px-4 py-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={electronicInvoice}
+                    onChange={e => setElectronicInvoice(e.target.checked)}
+                    className="w-4 h-4 accent-slate-800"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-slate-700">Requiere factura electrónica</span>
+                    <span className="block text-xs text-slate-400">Aplica IVA del 19% sobre el subtotal</span>
+                  </div>
+                  {electronicInvoice && (
+                    <span className="ml-auto text-sm font-semibold text-slate-700">+{fmtCOP(ivaAmount)}</span>
+                  )}
+                </label>
+              </div>
+
+              {/* Resumen de precio */}
+              {(discountValue > 0 || additionalValue > 0 || electronicInvoice) && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-4 space-y-1.5">
+                  <div className="flex justify-between text-xs text-slate-500">
+                    <span>Precio base</span><span>{fmtCOP(priceData?.totalPrice ?? 0)}</span>
+                  </div>
+                  {additionalValue > 0 && (
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <span>Cobro adicional</span><span>+{fmtCOP(additionalValue)}</span>
+                    </div>
+                  )}
+                  {discountValue > 0 && (
+                    <div className="flex justify-between text-xs text-amber-600">
+                      <span>Descuento</span><span>-{fmtCOP(discountValue)}</span>
+                    </div>
+                  )}
+                  {electronicInvoice && (
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <span>IVA 19%</span><span>+{fmtCOP(ivaAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-bold text-slate-800 border-t border-slate-200 pt-1.5 mt-1">
+                    <span>Total</span><span>{fmtCOP(totalFinal)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Pagos */}
+              <p className="text-sm font-medium text-slate-700 mb-3">Abono o pago</p>
+              {payments.map((p, i) => (
+                <div key={i} className="grid grid-cols-2 gap-3 mb-3 items-end">
+                  <div><label className={fl}>Método de pago</label>
+                    <select className={fi} value={p.method} onChange={e => updatePayment(i, 'method', e.target.value)}>
+                      {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1"><label className={fl}>Monto</label>
+                      <input className={fi} type="number" min="0" placeholder="0"
+                        value={p.amount} onChange={e => updatePayment(i, 'amount', e.target.value)} />
+                    </div>
+                    {payments.length > 1 && (
+                      <button onClick={() => removePaymentLine(i)} className="text-slate-400 hover:text-red-500 text-xl pb-2 leading-none">×</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              <button onClick={addPaymentLine}
+                className="w-full py-2.5 border border-dashed border-slate-300 hover:border-slate-400 rounded-xl text-sm text-slate-500 hover:text-slate-700 transition-all mb-4">
+                + Agregar otro método de pago
+              </button>
+
+              <div className={`flex justify-between items-center border rounded-xl px-4 py-3 ${overLimit ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
+                <div>
+                  <div className="text-xs text-slate-500">Total abonado</div>
+                  {overLimit && <div className="text-xs text-red-600 mt-0.5">Supera el total ({fmtCOP(totalFinal)})</div>}
+                </div>
+                <div className={`text-lg font-bold ${overLimit ? 'text-red-600' : 'text-slate-800'}`}>{fmtCOP(totalPaid)}</div>
+              </div>
+
+              {!hasPaidSomething && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-amber-700 text-sm mt-3">
+                  Sin abono — el huésped quedará con saldo pendiente al checkout.
+                </div>
+              )}
+            </>
           )}
 
           <div className="flex gap-3 mt-5">
@@ -850,7 +1089,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
 
           {isEarlyHour() && (
             <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4 text-sm text-blue-700">
-              🌙 <strong className="mr-1">Early check-in</strong> — Al confirmar elegirás la noche a cobrar.
+              <strong className="mr-1">Early check-in</strong> — Al confirmar elegirás la noche a cobrar.
             </div>
           )}
 
@@ -870,8 +1109,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
                 ['Salida', new Date(checkOutDate + 'T12:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })],
                 ['Noches', String(nights)],
                 ['Personas', `${numberOfGuests} · ${OCCUPANT_LABELS[occupantType]}`],
-                ['Toallas', `${towels} 🛁`],
-                ...(priceData ? [['Total estadía', fmtCOP(priceData.totalPrice)]] : []),
+                ['Toallas', `${towels}`],
               ]
             },
           ].map(section => (
@@ -887,6 +1125,66 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
               </div>
             </div>
           ))}
+
+          {/* Resumen financiero */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Facturación</p>
+            <div className="bg-slate-50 border border-slate-100 rounded-xl divide-y divide-slate-100">
+              {isCourtesy ? (
+                <div className="flex justify-between px-4 py-2.5">
+                  <span className="text-xs text-slate-500">Cortesía</span>
+                  <span className="text-sm font-medium text-emerald-600">Autorizada — sin cobro</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-xs text-slate-500">Precio base</span>
+                    <span className="text-sm font-medium text-slate-700">{fmtCOP(priceData?.totalPrice ?? 0)}</span>
+                  </div>
+                  {additionalValue > 0 && (
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-xs text-slate-500">Cobro adicional{additionalChargeReason ? ` (${additionalChargeReason})` : ''}</span>
+                      <span className="text-sm font-medium text-slate-700">+{fmtCOP(additionalValue)}</span>
+                    </div>
+                  )}
+                  {discountValue > 0 && (
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-xs text-slate-500">Descuento{discountReason ? ` (${discountReason})` : ''}</span>
+                      <span className="text-sm font-medium text-amber-600">-{fmtCOP(discountValue)}</span>
+                    </div>
+                  )}
+                  {electronicInvoice && (
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-xs text-slate-500">IVA 19%</span>
+                      <span className="text-sm font-medium text-slate-700">+{fmtCOP(ivaAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-sm font-semibold text-slate-700">Total</span>
+                    <span className="text-sm font-bold text-slate-800">{fmtCOP(totalFinal)}</span>
+                  </div>
+                  {hasPaidSomething && (
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-xs text-slate-500">Abonado</span>
+                      <span className="text-sm font-medium text-emerald-600">{fmtCOP(totalPaid)}</span>
+                    </div>
+                  )}
+                  {hasPaidSomething && totalPaid < totalFinal && (
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-xs text-slate-500">Saldo pendiente</span>
+                      <span className="text-sm text-amber-600 font-medium">{fmtCOP(totalFinal - totalPaid)}</span>
+                    </div>
+                  )}
+                  {!hasPaidSomething && (
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-xs text-slate-500">Pago</span>
+                      <span className="text-sm text-amber-600 font-medium">Sin abono — queda debiendo</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
 
           {companions.filter(c => c.name?.trim()).length > 0 && (
             <div className="mb-4">
@@ -904,39 +1202,8 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
             </div>
           )}
 
-          <div className="mb-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Pago</p>
-            <div className="bg-slate-50 border border-slate-100 rounded-xl divide-y divide-slate-100">
-              {!hasPaidSomething ? (
-                <div className="flex justify-between px-4 py-2.5">
-                  <span className="text-xs text-slate-500">Estado</span>
-                  <span className="text-sm text-amber-600 font-medium">Sin pago — queda debiendo</span>
-                </div>
-              ) : (
-                <>
-                  {payments.filter(p => parseFloat(p.amount) > 0).map((p, i) => (
-                    <div key={i} className="flex justify-between px-4 py-2.5">
-                      <span className="text-xs text-slate-500">{PAYMENT_METHODS.find(m => m.value === p.method)?.label}</span>
-                      <span className="text-sm font-medium text-emerald-600">{fmtCOP(parseFloat(p.amount))}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-sm font-semibold text-slate-700">Total abonado</span>
-                    <span className="text-sm font-bold text-emerald-600">{fmtCOP(totalPaid)}</span>
-                  </div>
-                  {priceData && totalPaid < priceData.totalPrice && (
-                    <div className="flex justify-between px-4 py-2.5">
-                      <span className="text-xs text-slate-500">Saldo pendiente al checkout</span>
-                      <span className="text-sm text-amber-600 font-medium">{fmtCOP(priceData.totalPrice - totalPaid)}</span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
           {submitError && (
-            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm mb-4">⚠ {submitError}</div>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm mb-4">{submitError}</div>
           )}
 
           <div className="flex gap-3">
@@ -944,7 +1211,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
             <button className={`${btn} flex-1`} onClick={handleConfirm} disabled={submitting || overLimit}>
               {submitting
                 ? <span className="flex items-center justify-center gap-2"><span className="animate-spin">⟳</span> Registrando…</span>
-                : `✓ Confirmar check-in${isEarlyHour() ? ' 🌙' : ''}`}
+                : `Confirmar check-in${isEarlyHour() ? ' (early)' : ''}`}
             </button>
           </div>
         </div>
@@ -953,7 +1220,7 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
       {/* ── PASO 6: Éxito ───────────────────────────────────────────────────── */}
       {step === 'success' && result && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <SuccessScreen result={result} payments={payments} totalPaid={totalPaid} onReset={handleReset} />
+          <SuccessScreen result={result} payments={payments} totalPaid={totalPaid} isCourtesy={isCourtesy} onReset={handleReset} />
         </div>
       )}
 
@@ -970,6 +1237,81 @@ const executeCheckIn = async (earlyOpt: 'PREVIOUS_NIGHT' | 'CURRENT_NIGHT' | nul
           onCancel={() => setShowEarlyModal(false)}
         />
       )}
+
+      {/* Modal cortesía */}
+      {showCourtesyModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <h2 className="text-lg font-bold text-slate-800 mb-1">Autorizar cortesía</h2>
+            <p className="text-sm text-slate-500 mb-4">La estadía será sin cobro. Requiere clave de administrador.</p>
+            <label className="text-xs text-slate-500 mb-1 block">Motivo de la cortesía</label>
+            <input className={`${fi} mb-3`} placeholder="Ej: Cliente VIP, compensación, etc."
+              value={courtesyReason} onChange={e => setCourtesyReason(e.target.value)} />
+            <label className="text-xs text-slate-500 mb-1 block">Clave de administrador</label>
+            <AdminPasswordInline
+              onConfirm={() => { setCourtesyApproved(true); setIsCourtesy(true); setShowCourtesyModal(false); }}
+              onCancel={() => setShowCourtesyModal(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Modal descuento */}
+      {showDiscountModal && (
+        <AdminPasswordModal
+          title="Aplicar descuento"
+          description="Los descuentos requieren autorización del administrador."
+          onConfirm={() => { setDiscountApproved(true); setShowDiscountModal(false); }}
+          onCancel={() => setShowDiscountModal(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── AdminPasswordInline ──────────────────────────────────────────────────────
+// Versión inline para usar dentro de un modal existente
+
+function AdminPasswordInline({ onConfirm, onCancel }: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!password) { setError('Ingresa la clave'); return; }
+    setLoading(true); setError('');
+    const valid = await verifyAdminPassword(password);
+    setLoading(false);
+    if (!valid) { setError('Clave incorrecta'); return; }
+    onConfirm();
+  };
+
+  const fi = "w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400";
+
+  return (
+    <>
+      <input
+        type="password"
+        autoFocus
+        className={`${fi} mb-3`}
+        placeholder="••••••••"
+        value={password}
+        onChange={e => setPassword(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+      />
+      {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+      <div className="flex gap-3">
+        <button onClick={onCancel} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+          Cancelar
+        </button>
+        <button onClick={handleSubmit} disabled={loading}
+          className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg">
+          {loading ? '⟳' : 'Confirmar'}
+        </button>
+      </div>
+    </>
   );
 }

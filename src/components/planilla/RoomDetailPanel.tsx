@@ -66,8 +66,8 @@ function formatDateLong(d: string) {
 }
 
 const OCCUPANT_LABELS: Record<string, string> = {
-  INDIVIDUAL:      'Individual',
-  PAREJA:          'Pareja',
+  INDIVIDUAL: 'Individual',
+  PAREJA: 'Pareja',
   MULTIPLE_PERSON: 'Múltiple',
 };
 
@@ -78,8 +78,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   const reservationId = room.reservationId;
 
   // Sección activa del panel
-  const [section, setSection] = useState<'info' | 'toallas' | 'extender' | 'abono'>('info');
-
+  const [section, setSection] = useState<'info' | 'toallas' | 'extender' | 'abono' | 'ocupantes'>('info');
   // Estado toallas
   const [towelQty, setTowelQty] = useState(1);
   const [towelDone, setTowelDone] = useState(false);
@@ -95,6 +94,18 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   const [abonoDone, setAbonoDone] = useState(false);
   const [abonoError, setAbonoError] = useState('');
   const [abonoResult, setAbonoResult] = useState<{ totalAbonado: number; saldoPendiente: number } | null>(null);
+
+  // Estado ocupantes
+  const [newGuests, setNewGuests] = useState(0);
+  const [ocupantesDone, setOcupantesDone] = useState(false);
+  const [ocupantesError, setOcupantesError] = useState('');
+  const [ocupantesResult, setOcupantesResult] = useState<{
+    oldNumberOfGuests: number;
+    newNumberOfGuests: number;
+    remainingNights: number;
+    newEstimatedTotal: number;
+    towelsToDeliver: number;
+  } | null>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -119,6 +130,23 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['towels-inventory'] });
       setTowelDone(true);
+    },
+  });
+
+  const ocupantesMutation = useMutation({
+    mutationFn: () =>
+      apiClient.patch(`/reservations/${reservationId}/guests`, {
+        numberOfGuests: newGuests,
+      }).then(r => r.data),
+    onSuccess: (data) => {
+      setOcupantesDone(true);
+      setOcupantesError('');
+      setOcupantesResult(data);
+      queryClient.invalidateQueries({ queryKey: ['reservation-detail', reservationId] });
+      queryClient.invalidateQueries({ queryKey: ['rooms-by-date'] });
+    },
+    onError: (err: any) => {
+      setOcupantesError(err?.response?.data?.error ?? 'Error al actualizar ocupantes');
     },
   });
 
@@ -170,10 +198,10 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
   const minExtendDate = reservation
     ? (() => {
-        const d = new Date(reservation.checkOutDate + 'T12:00:00');
-        d.setDate(d.getDate() + 1);
-        return d.toISOString().split('T')[0];
-      })()
+      const d = new Date(reservation.checkOutDate + 'T12:00:00');
+      d.setDate(d.getDate() + 1);
+      return d.toISOString().split('T')[0];
+    })()
     : '';
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -194,13 +222,12 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-slate-800">Hab. {room.roomNumber}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
-                room.rato
-                  ? 'bg-violet-100 text-violet-700 border-violet-200'
-                  : room.status === 'OCCUPIED'
-                    ? 'bg-blue-100 text-blue-700 border-blue-200'
-                    : 'bg-slate-100 text-slate-600 border-slate-200'
-              }`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${room.rato
+                ? 'bg-violet-100 text-violet-700 border-violet-200'
+                : room.status === 'OCCUPIED'
+                  ? 'bg-blue-100 text-blue-700 border-blue-200'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}>
                 {room.rato ? 'Rato' : room.statusLabel}
               </span>
             </div>
@@ -217,20 +244,20 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
         {/* Tabs */}
         {reservationId && room.status === 'OCCUPIED' && !room.rato && (
           <div className="flex border-b border-slate-200">
-            {(['info', 'toallas', 'extender', 'abono'] as const).map(tab => (
+            {(['info', 'toallas', 'extender', 'abono', 'ocupantes'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setSection(tab)}
-                className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
-                  section === tab
-                    ? 'text-slate-800 border-b-2 border-slate-800 bg-white'
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                }`}
+                className={`flex-1 py-2.5 text-xs font-medium transition-colors ${section === tab
+                  ? 'text-slate-800 border-b-2 border-slate-800 bg-white'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
               >
-                {tab === 'info' ? 'Información'
+                {tab === 'info' ? 'Info'
                   : tab === 'toallas' ? 'Toallas'
-                  : tab === 'extender' ? 'Extender'
-                  : 'Abono'}
+                    : tab === 'extender' ? 'Extender'
+                      : tab === 'abono' ? 'Abono'
+                        : 'Ocupantes'}
               </button>
             ))}
           </div>
@@ -507,7 +534,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                         <span className="text-sm font-medium text-slate-800">
                           {Math.max(0, Math.round(
                             (new Date(newCheckOut + 'T12:00:00').getTime() -
-                             new Date(reservation.checkOutDate + 'T12:00:00').getTime())
+                              new Date(reservation.checkOutDate + 'T12:00:00').getTime())
                             / (1000 * 60 * 60 * 24)
                           ))} noche(s)
                         </span>
@@ -554,11 +581,10 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 </div>
                 <div className="border-t border-slate-200 pt-2.5 flex justify-between">
                   <span className="text-sm font-semibold text-slate-700">Saldo pendiente</span>
-                  <span className={`text-sm font-bold ${
-                    abonoResult
-                      ? (abonoResult.saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600')
-                      : (saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600')
-                  }`}>
+                  <span className={`text-sm font-bold ${abonoResult
+                    ? (abonoResult.saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600')
+                    : (saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600')
+                    }`}>
                     {abonoResult
                       ? (abonoResult.saldoPendiente > 0 ? fmt(abonoResult.saldoPendiente) : 'Al día')
                       : (saldoPendiente > 0 ? fmt(saldoPendiente) : 'Al día')}
@@ -649,6 +675,120 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
                   >
                     {abonoMutation.isPending ? 'Registrando...' : `Registrar abono de ${abonoAmount ? fmt(Number(abonoAmount)) : '...'}`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {/* ── Sección: OCUPANTES ───────────────────────────────────── */}
+          {section === 'ocupantes' && reservation && (
+            <div className="p-6 space-y-5">
+              <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Ocupación actual</p>
+                <div className="flex justify-between">
+                  <span className="text-sm text-slate-500">Personas registradas</span>
+                  <span className="text-sm font-semibold text-slate-800">{reservation.numberOfGuests}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-slate-500">Tipo</span>
+                  <span className="text-sm text-slate-700">{OCCUPANT_LABELS[reservation.occupantType] ?? reservation.occupantType}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-slate-500">Total estimado actual</span>
+                  <span className="text-sm text-slate-700">{reservation.estimatedTotal ? fmt(reservation.estimatedTotal) : '—'}</span>
+                </div>
+              </div>
+
+              {ocupantesDone && ocupantesResult ? (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center space-y-1">
+                  <p className="text-sm font-medium text-emerald-700">Ocupantes actualizados</p>
+                  <p className="text-xs text-slate-500">
+                    {ocupantesResult.oldNumberOfGuests} → {ocupantesResult.newNumberOfGuests} personas
+                  </p>
+                  {ocupantesResult.towelsToDeliver > 0 && (
+                    <p className="text-xs text-blue-600 font-medium">
+                      Recuerda entregar {ocupantesResult.towelsToDeliver} toalla{ocupantesResult.towelsToDeliver !== 1 ? 's' : ''} adicional{ocupantesResult.towelsToDeliver !== 1 ? 'es' : ''}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    Nuevo total estimado: {fmt(ocupantesResult.newEstimatedTotal)}
+                  </p>
+                  <button
+                    onClick={() => { setOcupantesDone(false); setOcupantesResult(null); setNewGuests(0); }}
+                    className="mt-2 text-xs text-emerald-600 underline"
+                  >
+                    Modificar de nuevo
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Nuevo número de personas
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setNewGuests(g => Math.max(1, g - 1))}
+                        className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
+                      >
+                        −
+                      </button>
+                      <span className="text-2xl font-bold text-slate-800 w-8 text-center">
+                        {newGuests || reservation.numberOfGuests}
+                      </span>
+                      <button
+                        onClick={() => setNewGuests(g => (g || reservation.numberOfGuests) + 1)}
+                        className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Preview */}
+                  {newGuests > 0 && newGuests !== reservation.numberOfGuests && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-1.5">
+                      <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Resumen del cambio</p>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-slate-500">Personas antes</span>
+                        <span className="text-sm text-slate-500 line-through">{reservation.numberOfGuests}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-slate-700">Personas nuevas</span>
+                        <span className="text-sm font-semibold text-blue-700">{newGuests}</span>
+                      </div>
+                      {newGuests > reservation.numberOfGuests && (
+                        <div className="flex justify-between border-t border-blue-100 pt-1.5">
+                          <span className="text-sm text-slate-500">Toallas a entregar</span>
+                          <span className="text-sm font-medium text-slate-800">
+                            {newGuests - reservation.numberOfGuests} toalla{newGuests - reservation.numberOfGuests !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      )}
+                      <p className="text-xs text-slate-400 mt-1">
+                        El nuevo precio aplica solo para las noches restantes.
+                      </p>
+                    </div>
+                  )}
+
+                  {ocupantesError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      <p className="text-sm text-red-600">{ocupantesError}</p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => ocupantesMutation.mutate()}
+                    disabled={
+                      !newGuests ||
+                      newGuests === reservation.numberOfGuests ||
+                      ocupantesMutation.isPending
+                    }
+                    className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
+                  >
+                    {ocupantesMutation.isPending
+                      ? 'Guardando...'
+                      : `Actualizar a ${newGuests || reservation.numberOfGuests} persona${(newGuests || reservation.numberOfGuests) !== 1 ? 's' : ''}`}
                   </button>
                 </div>
               )}

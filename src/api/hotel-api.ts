@@ -64,6 +64,14 @@ export interface ReservationRequest {
   companions?: CompanionRequest[];
   depositMethod?: string;
   depositPayments?: { method: string; amount: number }[];
+  // Nuevos campos
+  requiresElectronicInvoice?: boolean;
+  discountAmount?: number;
+  discountReason?: string;
+  additionalCharge?: number;
+  additionalChargeReason?: string;
+  isCourtesy?: boolean;
+  courtesyReason?: string;
 }
 
 export interface CheckInRequest {
@@ -195,6 +203,7 @@ export const roomsApi = {
     checkIn: string;
     checkOut: string;
     numberOfGuests: number;
+    checkInHour?: number;
   }): Promise<PriceResponse> => {
     const res = await apiClient.get('/rooms/price', { params });
     return res.data;

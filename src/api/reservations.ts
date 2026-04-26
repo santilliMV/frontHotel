@@ -9,6 +9,11 @@ export interface ReservationCompanion {
   phone?: string;
 }
 
+export interface PaymentEntry {
+  method: string;
+  amount: number;
+}
+
 export interface CreateReservationDTO {
   firstName: string;
   lastName?: string;
@@ -21,6 +26,7 @@ export interface CreateReservationDTO {
   occupantType: OccupantType;
   approximateArrivalTime?: string;
   depositAmount?: number;
+  depositPayments?: PaymentEntry[];
   specialRequests?: string;
   companions?: ReservationCompanion[];
 }
@@ -28,13 +34,14 @@ export interface CreateReservationDTO {
 export interface ReservationResponse {
   id: string;
   reservationNumber: string;
-  guestId: string;
+  guestId: string | null;
   guestName: string;
   guestPhone: string;
   guestHasObservations: boolean;
   roomTypeId: string;
   roomTypeName: string;
   roomNumber: string | null;
+  roomId: string | null;
   checkInDate: string;
   checkOutDate: string;
   numberOfNights: number;
@@ -51,12 +58,11 @@ export interface ReservationResponse {
   createdBy: string;
   createdAt: string | null;
   companions: ReservationCompanion[];
-  roomId: string | null;
 }
 
 export const reservationsApi = {
   getAll: () =>
-  apiClient.get<ReservationResponse[]>('/reservations/all').then(r => r.data),
+    apiClient.get<ReservationResponse[]>('/reservations/all').then(r => r.data),
 
   create: (data: CreateReservationDTO) =>
     apiClient.post<ReservationResponse>('/reservations', data).then(r => r.data),

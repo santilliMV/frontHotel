@@ -412,6 +412,7 @@ export default function Planilla() {
                   {isPast
                     ? 'No hubo actividad en esa fecha.'
                     : 'No hay habitaciones con ese estado para esta fecha.'}
+
                 </td>
               </tr>
             )}
@@ -534,18 +535,18 @@ function RoomRow({
 
   return (
     <tr className={`transition-colors ${isEntregada
-        ? 'bg-slate-50/60 opacity-75'
-        : `hover:bg-slate-50 ${STATUS_ROW[room.status]}`
+      ? 'bg-slate-50/60 opacity-75'
+      : `hover:bg-slate-50 ${STATUS_ROW[room.status]}`
       }`}>
       <td className="px-4 py-3 font-semibold text-slate-800">{room.roomNumber}</td>
       <td className="px-4 py-3 text-slate-600 text-xs">{room.roomTypeName}</td>
       <td className="px-4 py-3 text-slate-600">{room.floor}</td>
       <td className="px-4 py-3">
         <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${isEntregada
-            ? 'bg-slate-100 text-slate-400 border-slate-200'
-            : room.rato
-              ? 'bg-violet-100 text-violet-700 border-violet-200'
-              : STATUS_STYLES[room.status]
+          ? 'bg-slate-100 text-slate-400 border-slate-200'
+          : room.rato
+            ? 'bg-violet-100 text-violet-700 border-violet-200'
+            : STATUS_STYLES[room.status]
           }`}>
           {isEntregada ? 'Entregada' : room.rato ? 'Rato' : room.statusLabel}
         </span>
@@ -609,6 +610,15 @@ function RoomRow({
                   className="text-xs text-purple-600 border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50"
                 >
                   Mover
+                </button>
+              )}
+              {/* Botón Ver — siempre visible para habitaciones ocupadas o reservadas */}
+              {(isOccupied || isReserved) && reservaId && (
+                <button
+                  onClick={onVerDetalle}
+                  className="text-xs text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50"
+                >
+                  Ver
                 </button>
               )}
             </div>

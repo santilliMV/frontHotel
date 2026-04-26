@@ -2,11 +2,30 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { guestsApi } from '../api/hotel-api';
 import type { GuestResponse, GuestRequest } from '../api/hotel-api';
 import { COLOMBIA_CITIES, COUNTRIES, DOC_TYPES } from '../constants';
+import apiClient from '../api/client';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+interface GuestHistoryEntry {
+  id: string;
+  reservationNumber: string | null;
+  roomNumber: string | null;
+  roomTypeName: string | null;
+  checkInDate: string | null;
+  checkOutDate: string | null;
+  numberOfNights: number | null;
+  totalAmount: number | null;
+  paymentMethodSummary: string | null;
+  notes: string | null;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmt = (d: string | null) =>
   d ? new Date(d).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+const fmtCOP = (n: number | null) =>
+  n != null ? '$' + Math.round(n).toLocaleString('es-CO') : '—';
 
 const emptyForm = (): GuestRequest => ({
   firstName: '', lastName: '', phone: '',
@@ -27,6 +46,12 @@ function GuestForm({
   error: string;
 }) {
   const [form, setForm] = useState<GuestRequest>(initial);
+
+  // Fix bug: cuando cambia el initial (editar vs crear), resetear el form
+  useEffect(() => {
+    setForm(initial);
+  }, [initial]);
+
   const set = (k: keyof GuestRequest, v: string) =>
     setForm((f) => ({ ...f, [k]: v || undefined }));
 
@@ -35,7 +60,6 @@ function GuestForm({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Fila 1: Nombre + Apellido */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>Nombre *</label>
@@ -51,7 +75,6 @@ function GuestForm({
         </div>
       </div>
 
-      {/* Fila 2: Teléfono */}
       <div>
         <label className={labelCls}>Teléfono *</label>
         <input className={inputCls} placeholder="3101234567"
@@ -59,7 +82,6 @@ function GuestForm({
           onChange={(e) => set('phone', e.target.value)} />
       </div>
 
-      {/* Fila 3: Tipo doc + Número doc */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>Tipo de documento</label>
@@ -80,7 +102,6 @@ function GuestForm({
         </div>
       </div>
 
-      {/* Fila 4: País + Ciudad */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>País</label>
@@ -94,18 +115,23 @@ function GuestForm({
         </div>
         <div>
           <label className={labelCls}>Ciudad</label>
-          <select className={inputCls}
-            value={form.city ?? ''}
-            onChange={(e) => set('city', e.target.value)}>
-            <option value="">— Seleccionar —</option>
-            {COLOMBIA_CITIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+          {(form.country === 'Colombia' || !form.country) ? (
+            <select className={inputCls}
+              value={form.city ?? ''}
+              onChange={(e) => set('city', e.target.value)}>
+              <option value="">— Seleccionar —</option>
+              {COLOMBIA_CITIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          ) : (
+            <input className={inputCls} placeholder="Ciudad"
+              value={form.city ?? ''}
+              onChange={(e) => set('city', e.target.value)} />
+          )}
         </div>
       </div>
 
-      {/* Fila 5: Dirección */}
       <div>
         <label className={labelCls}>Dirección</label>
         <input className={inputCls} placeholder="Calle 123 #45-67"
@@ -113,7 +139,6 @@ function GuestForm({
           onChange={(e) => set('address', e.target.value)} />
       </div>
 
-      {/* Fila 6: Ocupación + Placa */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>Ocupación</label>
@@ -129,9 +154,8 @@ function GuestForm({
         </div>
       </div>
 
-      {/* Observaciones */}
       <div>
-        <label className={labelCls}>⚠ Observaciones</label>
+        <label className={labelCls}>Observaciones</label>
         <textarea
           className={`${inputCls} resize-none`}
           rows={3}
@@ -146,7 +170,7 @@ function GuestForm({
 
       {error && (
         <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-          ⚠ {error}
+          {error}
         </div>
       )}
 
@@ -163,8 +187,134 @@ function GuestForm({
           disabled={saving || !form.firstName || !form.phone}
           className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
         >
-          {saving ? '⟳ Guardando…' : '✓ Guardar huésped'}
+          {saving ? 'Guardando...' : 'Guardar huésped'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── HistoryPanel ─────────────────────────────────────────────────────────────
+
+function HistoryPanel({ guest, onClose }: { guest: GuestResponse; onClose: () => void }) {
+  const [history, setHistory] = useState<GuestHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    apiClient.get(`/guests/${guest.id}/history`)
+      .then(r => setHistory(r.data))
+      .catch(() => setError('No se pudo cargar el historial.'))
+      .finally(() => setLoading(false));
+  }, [guest.id]);
+
+  const totalNoches = history.reduce((acc, h) => acc + (h.numberOfNights ?? 0), 0);
+  const totalGastado = history.reduce((acc, h) => acc + (h.totalAmount ?? 0), 0);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-6 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl my-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">Historial de estancias</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{guest.fullName} · {guest.phone}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Resumen */}
+        {!loading && !error && history.length > 0 && (
+          <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex gap-8 text-sm">
+            <div>
+              <span className="text-slate-400 text-xs">Estadías</span>
+              <p className="font-semibold text-slate-800">{history.length}</p>
+            </div>
+            <div>
+              <span className="text-slate-400 text-xs">Noches totales</span>
+              <p className="font-semibold text-slate-800">{totalNoches}</p>
+            </div>
+            {totalGastado > 0 && (
+              <div>
+                <span className="text-slate-400 text-xs">Total gastado</span>
+                <p className="font-semibold text-slate-800">{fmtCOP(totalGastado)}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Body */}
+        <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+          {loading && (
+            <p className="text-sm text-slate-400 text-center py-8">Cargando historial...</p>
+          )}
+
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && history.length === 0 && (
+            <p className="text-sm text-slate-400 text-center py-8">
+              Este huésped no tiene estadías registradas aún.
+            </p>
+          )}
+
+          {!loading && !error && history.map((h) => (
+            <div key={h.id} className="border border-slate-200 rounded-xl px-4 py-3 text-sm">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  {h.roomNumber && (
+                    <span className="font-semibold text-slate-800">Hab. {h.roomNumber}</span>
+                  )}
+                  {h.roomTypeName && (
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                      {h.roomTypeName}
+                    </span>
+                  )}
+                </div>
+                <div className="text-right">
+                  {h.totalAmount != null && h.totalAmount > 0 ? (
+                    <span className="font-semibold text-slate-800">{fmtCOP(h.totalAmount)}</span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+                <span>
+                  Entrada: {fmt(h.checkInDate)}
+                </span>
+                <span>
+                  Salida: {fmt(h.checkOutDate)}
+                </span>
+                {h.numberOfNights != null && (
+                  <span>{h.numberOfNights} noche{h.numberOfNights !== 1 ? 's' : ''}</span>
+                )}
+                {h.reservationNumber && (
+                  <span>{h.reservationNumber}</span>
+                )}
+                {h.paymentMethodSummary && (
+                  <span>{h.paymentMethodSummary}</span>
+                )}
+              </div>
+
+              {h.notes && (
+                <p className="mt-2 text-xs text-slate-400 italic">{h.notes}</p>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -172,11 +322,10 @@ function GuestForm({
 
 // ─── GuestCard ────────────────────────────────────────────────────────────────
 
-function GuestCard({ guest, onEdit, onSelect, selectLabel }: {
+function GuestCard({ guest, onEdit, onHistory }: {
   guest: GuestResponse;
   onEdit: (g: GuestResponse) => void;
-  onSelect?: (g: GuestResponse) => void;
-  selectLabel?: string;
+  onHistory: (g: GuestResponse) => void;
 }) {
   const initials = (guest.firstName[0] + (guest.lastName?.[0] ?? '')).toUpperCase();
 
@@ -184,20 +333,18 @@ function GuestCard({ guest, onEdit, onSelect, selectLabel }: {
     <div className={`bg-white rounded-xl border px-4 py-3.5 flex items-start gap-4 transition-colors hover:border-slate-300 ${
       guest.hasObservations ? 'border-red-200 bg-red-50/30' : 'border-slate-200'
     }`}>
-      {/* Avatar */}
       <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${
         guest.hasObservations ? 'bg-red-700' : 'bg-slate-800'
       }`}>
         {initials}
       </div>
 
-      {/* Body */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <span className="text-sm font-semibold text-slate-800">{guest.fullName}</span>
           {guest.hasObservations && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
-              ⚠ Obs.
+              Obs.
             </span>
           )}
           {guest.autoCreated && (
@@ -208,35 +355,32 @@ function GuestCard({ guest, onEdit, onSelect, selectLabel }: {
         </div>
 
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
-          <span>📞 {guest.phone}</span>
+          <span>{guest.phone}</span>
           {guest.documentNumber && (
-            <span>🪪 {guest.documentType} {guest.documentNumber}</span>
+            <span>{guest.documentType} {guest.documentNumber}</span>
           )}
           {guest.city && (
-            <span>📍 {guest.city}{guest.country && guest.country !== 'Colombia' ? `, ${guest.country}` : ''}</span>
+            <span>{guest.city}{guest.country && guest.country !== 'Colombia' ? `, ${guest.country}` : ''}</span>
           )}
           {guest.lastStayDate && (
-            <span>🏨 Última visita: {fmt(guest.lastStayDate)}</span>
+            <span>Última visita: {fmt(guest.lastStayDate)}</span>
           )}
         </div>
 
-        {guest.hasObservations && (
+        {guest.hasObservations && guest.observations && (
           <div className="mt-2 text-xs text-red-600 italic bg-red-50 border border-red-100 rounded-lg px-3 py-1.5 border-l-2 border-l-red-400">
             "{guest.observations}"
           </div>
         )}
       </div>
 
-      {/* Botones */}
       <div className="flex flex-col gap-1.5 flex-shrink-0">
-        {onSelect && (
-          <button
-            onClick={() => onSelect(guest)}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
-          >
-            {selectLabel ?? 'Seleccionar'}
-          </button>
-        )}
+        <button
+          onClick={() => onHistory(guest)}
+          className="px-3 py-1.5 border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800 text-xs font-medium rounded-lg transition-colors"
+        >
+          Historial
+        </button>
         <button
           onClick={() => onEdit(guest)}
           className="px-3 py-1.5 border border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-700 text-xs rounded-lg transition-colors"
@@ -253,14 +397,15 @@ function GuestCard({ guest, onEdit, onSelect, selectLabel }: {
 type Modal = 'none' | 'create' | 'edit';
 
 export default function Huespedes() {
-  const [query, setQuery]     = useState('');
-  const [guests, setGuests]   = useState<GuestResponse[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [modal, setModal]     = useState<Modal>('none');
-  const [editing, setEditing] = useState<GuestResponse | null>(null);
-  const [saving, setSaving]   = useState(false);
+  const [query, setQuery]       = useState('');
+  const [guests, setGuests]     = useState<GuestResponse[]>([]);
+  const [loading, setLoading]   = useState(false);
+  const [modal, setModal]       = useState<Modal>('none');
+  const [editing, setEditing]   = useState<GuestResponse | null>(null);
+  const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState('');
-  const [toast, setToast]     = useState('');
+  const [toast, setToast]       = useState('');
+  const [historyGuest, setHistoryGuest] = useState<GuestResponse | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadAll = useCallback(async () => {
@@ -283,8 +428,17 @@ export default function Huespedes() {
     }, 350);
   }, [query, loadAll]);
 
-  const openCreate = () => { setEditing(null); setFormError(''); setModal('create'); };
-  const openEdit = (g: GuestResponse) => { setEditing(g); setFormError(''); setModal('edit'); };
+  const openCreate = () => {
+    setEditing(null);
+    setFormError('');
+    setModal('create');
+  };
+
+  const openEdit = (g: GuestResponse) => {
+    setEditing(g);
+    setFormError('');
+    setModal('edit');
+  };
 
   const handleSave = async (data: GuestRequest) => {
     setSaving(true); setFormError('');
@@ -307,11 +461,13 @@ export default function Huespedes() {
   const initialForm = (): GuestRequest => {
     if (modal === 'edit' && editing) {
       return {
-        firstName: editing.firstName, lastName: editing.lastName ?? '',
+        firstName: editing.firstName,
+        lastName: editing.lastName ?? '',
         phone: editing.phone,
         documentType: editing.documentType ?? undefined,
         documentNumber: editing.documentNumber ?? '',
-        address: editing.address ?? '', city: editing.city ?? '',
+        address: editing.address ?? '',
+        city: editing.city ?? '',
         country: editing.country ?? 'Colombia',
         occupation: editing.occupation ?? '',
         vehiclePlate: editing.vehiclePlate ?? '',
@@ -328,7 +484,6 @@ export default function Huespedes() {
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
 
-        {/* Encabezado */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-slate-800">Huéspedes</h1>
@@ -343,17 +498,15 @@ export default function Huespedes() {
           </button>
         </div>
 
-        {/* Buscador */}
         <input
           className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400"
-          placeholder="Buscar por nombre, teléfono o documento…"
+          placeholder="Buscar por nombre, teléfono o documento..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
 
-        {/* Estados */}
         {loading && (
-          <div className="text-center py-12 text-slate-400 text-sm">Cargando huéspedes…</div>
+          <div className="text-center py-12 text-slate-400 text-sm">Cargando huéspedes...</div>
         )}
 
         {!loading && guests.length === 0 && (
@@ -372,22 +525,20 @@ export default function Huespedes() {
 
         {!loading && guests.length > 0 && (
           <>
-            {/* Con observaciones */}
             {withObs.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider text-red-500 flex items-center gap-2">
-                  ⚠ Con observaciones
+                  Con observaciones
                   <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-red-100 text-red-600 border border-red-200 rounded-md">
                     {withObs.length}
                   </span>
                 </p>
                 {withObs.map((g) => (
-                  <GuestCard key={g.id} guest={g} onEdit={openEdit} />
+                  <GuestCard key={g.id} guest={g} onEdit={openEdit} onHistory={setHistoryGuest} />
                 ))}
               </div>
             )}
 
-            {/* Normales */}
             {normal.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
@@ -397,7 +548,7 @@ export default function Huespedes() {
                   </span>
                 </p>
                 {normal.map((g) => (
-                  <GuestCard key={g.id} guest={g} onEdit={openEdit} />
+                  <GuestCard key={g.id} guest={g} onEdit={openEdit} onHistory={setHistoryGuest} />
                 ))}
               </div>
             )}
@@ -405,7 +556,7 @@ export default function Huespedes() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Modal editar / crear */}
       {modal !== 'none' && (
         <div
           className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-6 overflow-y-auto"
@@ -414,7 +565,7 @@ export default function Huespedes() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl my-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="text-base font-semibold text-slate-800">
-                {modal === 'create' ? '+ Nuevo huésped' : `Editar: ${editing?.fullName}`}
+                {modal === 'create' ? 'Nuevo huésped' : `Editar: ${editing?.fullName}`}
               </h2>
               <button
                 onClick={() => setModal('none')}
@@ -424,7 +575,9 @@ export default function Huespedes() {
               </button>
             </div>
             <div className="px-6 py-5">
+              {/* key fuerza re-mount del form cuando cambia el huésped editado */}
               <GuestForm
+                key={editing?.id ?? 'create'}
                 initial={initialForm()}
                 onSave={handleSave}
                 onCancel={() => setModal('none')}
@@ -436,10 +589,18 @@ export default function Huespedes() {
         </div>
       )}
 
+      {/* Panel historial */}
+      {historyGuest && (
+        <HistoryPanel
+          guest={historyGuest}
+          onClose={() => setHistoryGuest(null)}
+        />
+      )}
+
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 bg-emerald-800 border border-emerald-600 text-emerald-100 px-5 py-3 rounded-xl text-sm font-medium shadow-lg z-50">
-          ✓ {toast}
+          {toast}
         </div>
       )}
     </div>

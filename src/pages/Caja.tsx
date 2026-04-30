@@ -65,6 +65,9 @@ interface PaymentTransaction {
   guestName: string;
   roomNumber: string | null;
   reservationNumber: string | null;
+  checkInDate: string | null;
+  checkOutDate: string | null;
+  numberOfNights: number | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -102,24 +105,85 @@ const formatTimeRange = (open: string, close: string | null) => {
   return `${o} — ${c}`;
 };
 
+const fmtShortDate = (d: string) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+
 const isToday = (dateStr: string) => dateStr === toLocalDateStr(new Date());
+
+// Un pago es "abono" si su notes empieza con "ABONO"
+const isAbono = (tx: PaymentTransaction) =>
+  tx.type === 'CHECKIN' && (tx.notes?.startsWith('ABONO') ?? false);
+
+// Descripción de noches para mostrar en la tabla
+function nightsLabel(tx: PaymentTransaction): string | null {
+  if (tx.type === 'VITRINA' || tx.type === 'RATO') return null;
+  if (!tx.checkInDate || !tx.checkOutDate || !tx.numberOfNights) return null;
+  const checkIn  = new Date(tx.checkInDate  + 'T12:00:00');
+  const checkOut = new Date(tx.checkOutDate + 'T12:00:00');
+  const sameMonth = checkIn.getMonth() === checkOut.getMonth() &&
+                    checkIn.getFullYear() === checkOut.getFullYear();
+  const inDay  = checkIn.getDate();
+  const outDay = checkOut.getDate();
+  const month  = checkIn.toLocaleDateString('es-CO', { month: 'short' });
+  const nights = tx.numberOfNights;
+  if (sameMonth) {
+    return `${inDay}–${outDay} ${month} · ${nights} noche${nights !== 1 ? 's' : ''}`;
+  }
+  return `${fmtShortDate(tx.checkInDate)} – ${fmtShortDate(tx.checkOutDate)} · ${nights} noche${nights !== 1 ? 's' : ''}`;
+}
+
+// Devuelve el tipo efectivo para agrupar: abonos van como 'ABONO', no como 'CHECKIN'
+function effectiveType(tx: PaymentTransaction): string {
+  if (isAbono(tx)) return 'ABONO';
+  return tx.type;
+}
+
+// Calcula breakdown de métodos y tipos para un turno
+function calcShiftBreakdown(shift: Shift, transactions: PaymentTransaction[]) {
+  const start = new Date(shift.openedAt).getTime();
+  const end   = shift.closedAt ? new Date(shift.closedAt).getTime() : Infinity;
+
+  const shiftTxs = transactions.filter(tx => {
+    const t = new Date(tx.paymentDate).getTime();
+    return t >= start && t <= end;
+  });
+
+  const byMethod: Record<string, { total: number; count: number }> = {};
+  for (const tx of shiftTxs) {
+    const m = tx.method ?? 'DESCONOCIDO';
+    if (!byMethod[m]) byMethod[m] = { total: 0, count: 0 };
+    byMethod[m].total += tx.amount;
+    byMethod[m].count += 1;
+  }
+
+  // Usar effectiveType para separar abonos de habitaciones
+  const byType: Record<string, number> = {};
+  for (const tx of shiftTxs) {
+    const t = effectiveType(tx);
+    byType[t] = (byType[t] ?? 0) + tx.amount;
+  }
+
+  return {
+    byMethod,
+    byType,
+    totalIngresos: shiftTxs.reduce((s, t) => s + t.amount, 0),
+    txCount: shiftTxs.length,
+  };
+}
 
 // Agrupa transacciones por turno
 function groupByShift(transactions: PaymentTransaction[], shifts: Shift[]) {
   const groups: { shift: Shift | null; transactions: PaymentTransaction[] }[] = [];
 
-  // Ordenar turnos cronológicamente
   const sortedShifts = [...shifts].sort(
     (a, b) => new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime()
   );
 
-  // Para cada transacción, determinar a qué turno pertenece
-  const assigned = new Map<string, string>(); // txId -> shiftId
+  const assigned = new Map<string, string>();
 
   for (const tx of transactions) {
     const txTime = new Date(tx.paymentDate).getTime();
     let assignedShift: Shift | null = null;
-
     for (const shift of sortedShifts) {
       const shiftStart = new Date(shift.openedAt).getTime();
       const shiftEnd = shift.closedAt ? new Date(shift.closedAt).getTime() : Infinity;
@@ -131,7 +195,6 @@ function groupByShift(transactions: PaymentTransaction[], shifts: Shift[]) {
     assigned.set(tx.id, assignedShift?.id ?? 'sin-turno');
   }
 
-  // Construir grupos
   const shiftGroups = new Map<string, PaymentTransaction[]>();
   shiftGroups.set('sin-turno', []);
   for (const shift of sortedShifts) shiftGroups.set(shift.id, []);
@@ -141,7 +204,6 @@ function groupByShift(transactions: PaymentTransaction[], shifts: Shift[]) {
     shiftGroups.get(shiftId)?.push(tx);
   }
 
-  // Convertir a array de grupos (solo los que tienen transacciones)
   for (const shift of sortedShifts) {
     const txs = shiftGroups.get(shift.id) ?? [];
     if (txs.length > 0) groups.push({ shift, transactions: txs });
@@ -150,6 +212,27 @@ function groupByShift(transactions: PaymentTransaction[], shifts: Shift[]) {
   if (sinTurno.length > 0) groups.push({ shift: null, transactions: sinTurno });
 
   return groups;
+}
+
+// ─── Config de tipos de ingreso ───────────────────────────────────────────────
+// Centralizada para no repetir en 4 lugares distintos
+
+const TYPE_CONFIG: Record<string, { label: string; code: string; color: string }> = {
+  CHECKIN: { label: 'Habitaciones', code: 'N', color: 'bg-blue-100 text-blue-700' },
+  ABONO:   { label: 'Abonos',       code: 'A', color: 'bg-amber-100 text-amber-700' },
+  CHECKOUT: { label: 'Checkout',    code: 'S', color: 'bg-slate-100 text-slate-600' },
+  RATO:    { label: 'Rato',         code: 'R', color: 'bg-purple-100 text-purple-700' },
+  VITRINA: { label: 'Vitrina',      code: 'V', color: 'bg-green-100 text-green-700' },
+};
+
+function TypeBadge({ type, notes }: { type: string; notes?: string | null }) {
+  const key = type === 'CHECKIN' && notes?.startsWith('ABONO') ? 'ABONO' : type;
+  const cfg = TYPE_CONFIG[key] ?? { label: key, code: '?', color: 'bg-slate-100 text-slate-600' };
+  return (
+    <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${cfg.color}`}>
+      {cfg.code}
+    </span>
+  );
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -200,8 +283,8 @@ export default function Caja() {
     queryKey: ['cash-transactions', selectedDate],
     queryFn: () => apiClient.get(`/cash/payments?date=${selectedDate}`).then(r => r.data),
     enabled: !!caja?.id,
-    staleTime: 0,                              // ← fuerza refetch siempre
-    refetchInterval: viewingToday ? 15000 : false,  // ← de 30s a 15s
+    staleTime: 0,
+    refetchInterval: viewingToday ? 15000 : false,
   });
 
   // ── Cálculos ──────────────────────────────────────────────────────────────
@@ -216,11 +299,18 @@ export default function Caja() {
 
   const txGroups = groupByShift(transactions, shifts);
 
+  // Desglose por tipo efectivo para el resumen del día
+  const byTypeTotals: Record<string, number> = {};
+  for (const tx of transactions) {
+    const t = effectiveType(tx);
+    byTypeTotals[t] = (byTypeTotals[t] ?? 0) + tx.amount;
+  }
+
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['cash-date'] });          // ← sin selectedDate para invalidar todo
+    queryClient.invalidateQueries({ queryKey: ['cash-date'] });
     queryClient.invalidateQueries({ queryKey: ['cash-withdrawals'] });
     queryClient.invalidateQueries({ queryKey: ['cash-breakdown'] });
-    queryClient.invalidateQueries({ queryKey: ['cash-transactions'] });  // ← sin selectedDate
+    queryClient.invalidateQueries({ queryKey: ['cash-transactions'] });
     queryClient.invalidateQueries({ queryKey: ['shifts-date'] });
   };
 
@@ -250,7 +340,6 @@ export default function Caja() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Selector de fecha */}
           <input
             type="date"
             value={selectedDate}
@@ -278,10 +367,10 @@ export default function Caja() {
               Abrir caja
             </button>
           )}
-          {viewingToday && cajaAbierta && !cajaCerrada && isAdmin && (
+          {viewingToday && cajaAbierta && !cajaCerrada && (
             <button onClick={() => setShowWithdrawModal(true)}
               className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg">
-              Retirar
+              Retirar efectivo
             </button>
           )}
           {viewingToday && cajaAbierta && !cajaCerrada && isAdmin && (
@@ -301,7 +390,6 @@ export default function Caja() {
       {/* Sin caja */}
       {!cajaAbierta && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-8 text-center">
-          <p className="text-2xl mb-2">🔒</p>
           <p className="font-semibold text-amber-800">
             {viewingToday ? 'La caja de hoy no ha sido abierta' : 'No hay caja registrada para este día'}
           </p>
@@ -316,70 +404,135 @@ export default function Caja() {
 
       {cajaAbierta && caja && (
         <>
-          {/* ── Fila superior ── */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-1 rounded-xl bg-slate-800 p-5 flex flex-col justify-between">
-              <div>
-                <p className="text-xs text-slate-300 uppercase tracking-wider mb-1">Efectivo esperado</p>
-                <p className="text-3xl font-bold text-white mt-1">{fmtCOP(expectedCashBalance)}</p>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                  Base {fmtCOP(caja.baseAmount)}
-                  {totalCash > 0 && ` + Efectivo ${fmtCOP(totalCash)}`}
-                  {caja.totalExpenses > 0 && ` − Gastos ${fmtCOP(caja.totalExpenses)}`}
-                  {caja.totalWithdrawn > 0 && ` − Retirado ${fmtCOP(caja.totalWithdrawn)}`}
-                </p>
-              </div>
-              {!cajaCerrada && viewingToday && (
-                <div className="flex items-center gap-1.5 text-emerald-400 mt-4">
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-xs font-medium">Caja abierta</span>
-                </div>
-              )}
-              {cajaCerrada && caja.actualBalance != null && (
-                <div className="mt-4 pt-3 border-t border-slate-600">
-                  <p className="text-xs text-slate-400">Contado al cierre</p>
-                  <p className="text-xl font-bold text-white">{fmtCOP(caja.actualBalance)}</p>
-                  {caja.discrepancy != null && (
-                    <p className={`text-sm font-semibold mt-1 ${Math.abs(caja.discrepancy) === 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {Math.abs(caja.discrepancy) === 0 ? '✓ Sin diferencia'
-                        : `${caja.discrepancy > 0 ? 'Sobran' : 'Faltan'} ${fmtCOP(Math.abs(caja.discrepancy))}`}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                Ventas por método de pago
-              </p>
-              {breakdown.length === 0 ? (
-                <p className="text-sm text-slate-400 py-2">Sin ventas registradas.</p>
-              ) : (
-                <div className="space-y-2.5">
-                  {breakdown.map(b => (
-                    <div key={b.id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${METHOD_COLORS[b.method] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                          {METHOD_LABELS[b.method] ?? b.method}
-                        </span>
-                        <span className="text-xs text-slate-400">{b.numberOfTransactions} transacción{b.numberOfTransactions !== 1 ? 'es' : ''}</span>
-                      </div>
-                      <span className="font-semibold text-slate-700">{fmtCOP(b.totalAmount)}</span>
-                    </div>
-                  ))}
-                  <div className="border-t border-slate-100 pt-2.5 flex justify-between items-end">
-                    <div className="text-xs text-slate-500 space-y-0.5">
-                      <p>Efectivo: <span className="font-semibold text-slate-700">{fmtCOP(totalCash)}</span></p>
-                      {totalNoCash > 0 && <p>Otros: <span className="font-semibold text-slate-700">{fmtCOP(totalNoCash)}</span></p>}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">Total vendido</p>
-                      <p className="text-lg font-bold text-slate-800">{fmtCOP(caja.totalSales)}</p>
-                    </div>
+          {/* ── Resumen total del día ── */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-slate-700">Resumen total del día</h3>
+                {!cajaCerrada && viewingToday && (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs text-emerald-600 font-medium">En curso</span>
                   </div>
+                )}
+              </div>
+              <span className="text-xs text-slate-400">
+                Total vendido: <span className="font-semibold text-slate-700">{fmtCOP(caja.totalSales)}</span>
+              </span>
+            </div>
+            <div className="p-5 grid grid-cols-3 gap-4">
+
+              {/* Columna 1: Movimientos de caja */}
+              <div className="space-y-2.5 text-sm">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Caja</p>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Base efectivo</span>
+                  <span className="font-medium text-slate-700">{fmtCOP(caja.baseAmount)}</span>
                 </div>
-              )}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Ventas totales</span>
+                  <span className="font-medium text-emerald-700">{fmtCOP(caja.totalSales)}</span>
+                </div>
+                {caja.totalExpenses > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Gastos</span>
+                    <span className="font-medium text-red-600">− {fmtCOP(caja.totalExpenses)}</span>
+                  </div>
+                )}
+                {caja.totalWithdrawn > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Recogido admin</span>
+                    <span className="font-medium text-amber-600">− {fmtCOP(caja.totalWithdrawn)}</span>
+                  </div>
+                )}
+                <div className="border-t border-slate-100 pt-2.5 flex justify-between">
+                  <span className="font-semibold text-slate-700">Efectivo esperado</span>
+                  <span className="font-bold text-slate-800">{fmtCOP(expectedCashBalance)}</span>
+                </div>
+                {cajaCerrada && caja.actualBalance != null && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Contado al cierre</span>
+                      <span className="font-medium text-slate-700">{fmtCOP(caja.actualBalance)}</span>
+                    </div>
+                    {caja.discrepancy != null && (
+                      <div className="flex justify-between">
+                        <span className={Math.abs(caja.discrepancy) === 0 ? 'text-emerald-600' : 'text-red-600'}>
+                          Diferencia
+                        </span>
+                        <span className={`font-semibold ${Math.abs(caja.discrepancy) === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {Math.abs(caja.discrepancy) === 0
+                            ? 'Cuadrada'
+                            : `${caja.discrepancy > 0 ? '+' : ''}${fmtCOP(caja.discrepancy)}`}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Columna 2: Por tipo de ingreso — usando effectiveType */}
+              <div className="space-y-2.5 text-sm border-l border-slate-100 pl-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Por tipo de ingreso</p>
+                {Object.keys(byTypeTotals).length === 0 ? (
+                  <p className="text-slate-400 text-xs">Sin ingresos registrados</p>
+                ) : (
+                  <>
+                    {Object.entries(byTypeTotals).map(([type, amt]) => {
+                      const cfg = TYPE_CONFIG[type] ?? { label: type, code: '?', color: 'bg-slate-100 text-slate-600' };
+                      return (
+                        <div key={type} className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${cfg.color}`}>
+                              {cfg.code}
+                            </span>
+                            <span className="text-slate-500">{cfg.label}</span>
+                          </div>
+                          <span className="font-medium text-slate-700">{fmtCOP(amt)}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="border-t border-slate-100 pt-2 flex justify-between">
+                      <span className="font-semibold text-slate-700">Total</span>
+                      <span className="font-bold text-slate-800">{fmtCOP(transactions.reduce((s, t) => s + t.amount, 0))}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Columna 3: Por método de pago */}
+              <div className="space-y-2.5 text-sm border-l border-slate-100 pl-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Por método de pago</p>
+                {breakdown.length === 0 ? (
+                  <p className="text-slate-400 text-xs">Sin ventas registradas</p>
+                ) : (
+                  <>
+                    {breakdown.map(b => (
+                      <div key={b.id} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${METHOD_COLORS[b.method] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                            {METHOD_LABELS[b.method] ?? b.method}
+                          </span>
+                          <span className="text-xs text-slate-400">{b.numberOfTransactions} pago{b.numberOfTransactions !== 1 ? 's' : ''}</span>
+                        </div>
+                        <span className="font-medium text-slate-700">{fmtCOP(b.totalAmount)}</span>
+                      </div>
+                    ))}
+                    <div className="border-t border-slate-100 pt-2 space-y-1 text-xs text-slate-500">
+                      <div className="flex justify-between">
+                        <span>Efectivo</span>
+                        <span className="font-semibold text-slate-700">{fmtCOP(totalCash)}</span>
+                      </div>
+                      {totalNoCash > 0 && (
+                        <div className="flex justify-between">
+                          <span>Otros métodos</span>
+                          <span className="font-semibold text-slate-700">{fmtCOP(totalNoCash)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -423,7 +576,7 @@ export default function Caja() {
                                   : 'text-red-600'
                                 }`}>
                                 {shift.discrepancy === null ? '—'
-                                  : Math.abs(shift.discrepancy) === 0 ? '✓'
+                                  : Math.abs(shift.discrepancy) === 0 ? 'OK'
                                     : `${shift.discrepancy > 0 ? '+' : ''}${fmtCOP(shift.discrepancy)}`}
                               </p>
                             </div>
@@ -431,31 +584,209 @@ export default function Caja() {
                           <span className="text-slate-300 text-sm">{isExpanded ? '▲' : '▼'}</span>
                         </div>
                       </button>
-                      {isExpanded && (
-                        <div className="px-5 pb-4 bg-slate-50 border-t border-slate-100">
-                          <div className="grid grid-cols-3 gap-3 pt-3 text-sm">
-                            {[
-                              ['Base recibido', fmtCOP(shift.baseAmount)],
-                              ['Ventas', fmtCOP(shift.totalSales)],
-                              ['Gastos', fmtCOP(shift.totalExpenses)],
-                              ['Retirado admin', fmtCOP(shift.totalWithdrawn)],
-                              ['Efectivo esperado', fmtCOP(shiftExpected)],
-                              ...(shift.actualCashAmount != null ? [['Contado al cierre', fmtCOP(shift.actualCashAmount)]] : []),
-                            ].map(([k, v]) => (
-                              <div key={k}>
-                                <p className="text-xs text-slate-400">{k}</p>
-                                <p className="font-semibold text-slate-700">{v}</p>
+                      {isExpanded && (() => {
+                        const bd = calcShiftBreakdown(shift, transactions);
+                        const cashTotal = bd.byMethod['CASH']?.total ?? 0;
+                        const nonCashTotal = bd.totalIngresos - cashTotal;
+                        return (
+                          <div className="px-5 pb-5 bg-slate-50 border-t border-slate-100 space-y-4">
+
+                            {/* ── Resumen financiero ── */}
+                            <div className="pt-4 grid grid-cols-2 gap-3">
+                              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5 text-sm">
+                                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Resumen del turno</p>
+                                <div className="flex justify-between">
+                                  <span className="text-slate-500">Base recibida</span>
+                                  <span className="font-medium text-slate-700">{fmtCOP(shift.baseAmount)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-slate-500">Ventas registradas</span>
+                                  <span className="font-medium text-emerald-700">{fmtCOP(shift.totalSales)}</span>
+                                </div>
+                                {shift.totalExpenses > 0 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-slate-500">Gastos</span>
+                                    <span className="font-medium text-red-600">− {fmtCOP(shift.totalExpenses)}</span>
+                                  </div>
+                                )}
+                                {shift.totalWithdrawn > 0 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-slate-500">Retirado admin</span>
+                                    <span className="font-medium text-amber-600">− {fmtCOP(shift.totalWithdrawn)}</span>
+                                  </div>
+                                )}
+                                <div className="border-t border-slate-100 pt-2.5 flex justify-between">
+                                  <span className="font-semibold text-slate-700">Efectivo esperado</span>
+                                  <span className="font-bold text-slate-800">{fmtCOP(shiftExpected)}</span>
+                                </div>
+                                {shift.actualCashAmount != null && (
+                                  <>
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-500">Contado al cierre</span>
+                                      <span className="font-medium text-slate-700">{fmtCOP(shift.actualCashAmount)}</span>
+                                    </div>
+                                    {shift.discrepancy != null && Math.abs(shift.discrepancy) > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="text-red-600">Diferencia</span>
+                                        <span className="font-semibold text-red-600">
+                                          {shift.discrepancy > 0 ? '+' : ''}{fmtCOP(shift.discrepancy)}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {shift.discrepancy != null && Math.abs(shift.discrepancy) === 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="text-emerald-600">Diferencia</span>
+                                        <span className="font-semibold text-emerald-600">Cuadrada</span>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
                               </div>
-                            ))}
+
+                              <div className="space-y-3">
+                                {/* Por tipo de ingreso — usando bd.byType que ya usa effectiveType */}
+                                {bd.txCount > 0 && (
+                                  <div className="bg-white rounded-xl border border-slate-200 p-4 text-sm">
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Por tipo</p>
+                                    <div className="space-y-1.5">
+                                      {Object.entries(bd.byType).map(([type, amt]) => {
+                                        const cfg = TYPE_CONFIG[type] ?? { label: type, code: '?', color: 'bg-slate-100 text-slate-600' };
+                                        return (
+                                          <div key={type} className="flex justify-between items-center">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${cfg.color}`}>
+                                                {cfg.code}
+                                              </span>
+                                              <span className="text-slate-500">{cfg.label}</span>
+                                            </div>
+                                            <span className="font-medium text-slate-700">{fmtCOP(amt)}</span>
+                                          </div>
+                                        );
+                                      })}
+                                      <div className="border-t border-slate-100 pt-1.5 flex justify-between">
+                                        <span className="font-semibold text-slate-700">Total ingresos</span>
+                                        <span className="font-bold text-slate-800">{fmtCOP(bd.totalIngresos)}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Por método de pago */}
+                                {bd.txCount > 0 && (
+                                  <div className="bg-white rounded-xl border border-slate-200 p-4 text-sm">
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Por método de pago</p>
+                                    <div className="space-y-1.5">
+                                      {Object.entries(bd.byMethod).map(([method, { total, count }]) => (
+                                        <div key={method} className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${METHOD_COLORS[method] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                              {METHOD_LABELS[method] ?? method}
+                                            </span>
+                                            <span className="text-xs text-slate-400">{count} pago{count !== 1 ? 's' : ''}</span>
+                                          </div>
+                                          <span className="font-medium text-slate-700">{fmtCOP(total)}</span>
+                                        </div>
+                                      ))}
+                                      <div className="border-t border-slate-100 pt-1.5 text-xs text-slate-500 space-y-0.5">
+                                        <div className="flex justify-between">
+                                          <span>Efectivo</span>
+                                          <span className="font-medium text-slate-700">{fmtCOP(cashTotal)}</span>
+                                        </div>
+                                        {nonCashTotal > 0 && (
+                                          <div className="flex justify-between">
+                                            <span>Otros métodos</span>
+                                            <span className="font-medium text-slate-700">{fmtCOP(nonCashTotal)}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {bd.txCount === 0 && (
+                                  <div className="bg-white rounded-xl border border-slate-200 p-4 text-sm text-slate-400 text-center">
+                                    Sin transacciones en este turno
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* ── Tabla resumen: cálculo de efectivo esperado ── */}
+                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                              <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Cálculo de efectivo en caja</p>
+                              </div>
+                              <table className="w-full text-sm">
+                                <tbody className="divide-y divide-slate-50">
+                                  <tr className="hover:bg-slate-50">
+                                    <td className="px-4 py-2.5 text-slate-500">Base efectivo recibida</td>
+                                    <td className="px-4 py-2.5 text-right font-medium text-slate-700">{fmtCOP(shift.baseAmount)}</td>
+                                  </tr>
+                                  {/* Tipos de ingreso usando TYPE_CONFIG */}
+                                  {Object.entries(bd.byType).map(([type, amt]) => {
+                                    if (amt === 0) return null;
+                                    const cfg = TYPE_CONFIG[type] ?? { label: type, code: '?', color: 'bg-slate-100 text-slate-600' };
+                                    return (
+                                      <tr key={type} className="hover:bg-slate-50">
+                                        <td className="px-4 py-2.5 text-slate-500">
+                                          <span className="flex items-center gap-2">
+                                            <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${cfg.color}`}>
+                                              {cfg.code}
+                                            </span>
+                                            {cfg.label}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-2.5 text-right font-medium text-emerald-700">+ {fmtCOP(amt)}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                  {shift.totalExpenses > 0 && (
+                                    <tr className="hover:bg-slate-50">
+                                      <td className="px-4 py-2.5 text-slate-500">Gastos</td>
+                                      <td className="px-4 py-2.5 text-right font-medium text-red-600">− {fmtCOP(shift.totalExpenses)}</td>
+                                    </tr>
+                                  )}
+                                  {shift.totalWithdrawn > 0 && (
+                                    <tr className="hover:bg-slate-50">
+                                      <td className="px-4 py-2.5 text-slate-500">Recogido por admin</td>
+                                      <td className="px-4 py-2.5 text-right font-medium text-amber-600">− {fmtCOP(shift.totalWithdrawn)}</td>
+                                    </tr>
+                                  )}
+                                  {Object.keys(bd.byMethod).length > 0 && (
+                                    <tr>
+                                      <td colSpan={2} className="px-4 py-2 bg-slate-50">
+                                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Por método de pago</p>
+                                      </td>
+                                    </tr>
+                                  )}
+                                  {Object.entries(bd.byMethod).map(([method, { total, count }]) => (
+                                    <tr key={method} className="hover:bg-slate-50">
+                                      <td className="px-4 py-2.5 text-slate-500 flex items-center gap-2">
+                                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${METHOD_COLORS[method] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                          {METHOD_LABELS[method] ?? method}
+                                        </span>
+                                        <span className="text-xs text-slate-400">{count} pago{count !== 1 ? 's' : ''}</span>
+                                      </td>
+                                      <td className="px-4 py-2.5 text-right font-medium text-slate-700">{fmtCOP(total)}</td>
+                                    </tr>
+                                  ))}
+                                  <tr className="bg-slate-800">
+                                    <td className="px-4 py-3 font-semibold text-white">Efectivo esperado en caja</td>
+                                    <td className="px-4 py-3 text-right font-bold text-white text-base">{fmtCOP(shiftExpected)}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {shift.notes && (
+                              <p className="text-xs text-slate-500 bg-white border border-slate-100 rounded-lg px-3 py-2">{shift.notes}</p>
+                            )}
+                            {shift.discrepancyNotes && (
+                              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{shift.discrepancyNotes}</p>
+                            )}
                           </div>
-                          {shift.notes && (
-                            <p className="mt-3 text-xs text-slate-500 bg-white border border-slate-100 rounded-lg px-3 py-2">{shift.notes}</p>
-                          )}
-                          {shift.discrepancyNotes && (
-                            <p className="mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">⚠ {shift.discrepancyNotes}</p>
-                          )}
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -466,12 +797,27 @@ export default function Caja() {
           {/* ── Transacciones agrupadas por turno ── */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-semibold text-slate-700">
-                Transacciones del día
-                {transactions.length > 0 && <span className="ml-2 text-xs font-normal text-slate-400">({transactions.length})</span>}
-              </h3>
+              <div>
+                <h3 className="font-semibold text-slate-700">
+                  Transacciones del día
+                  {transactions.length > 0 && <span className="ml-2 text-xs font-normal text-slate-400">({transactions.length})</span>}
+                </h3>
+                {/* Leyenda de letras */}
+                {transactions.length > 0 && (
+                  <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                    {Object.entries(TYPE_CONFIG).map(([, cfg]) => (
+                      <div key={cfg.code} className="flex items-center gap-1">
+                        <span className={`text-xs font-bold w-4 h-4 flex items-center justify-center rounded ${cfg.color}`}>
+                          {cfg.code}
+                        </span>
+                        <span className="text-xs text-slate-400">{cfg.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               {transactions.length > 0 && (
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-400 self-start">
                   Total: <span className="font-semibold text-slate-700">{fmtCOP(transactions.reduce((s, t) => s + t.amount, 0))}</span>
                 </span>
               )}
@@ -504,42 +850,55 @@ export default function Caja() {
                     {/* Tabla de transacciones del turno */}
                     <table className="w-full text-sm">
                       <tbody className="divide-y divide-slate-50">
-                        {group.transactions.map(tx => (
-                          <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-3 text-slate-400 text-xs tabular-nums w-16">
-                              {formatTime(tx.paymentDate)}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700 font-medium">
-                              {tx.guestName.trim() || '—'}
-                              {tx.isPartialPayment && (
-                                <span className="ml-1.5 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">parcial</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600 w-20">
-                              {tx.roomNumber ? `#${tx.roomNumber}` : '—'}
-                            </td>
-                            <td className="px-4 py-3 text-slate-400 text-xs">
-                              {tx.reservationNumber ?? '—'}
-                            </td>
-                            <td className="px-4 py-3 w-28">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${METHOD_COLORS[tx.method] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                  {METHOD_LABELS[tx.method] ?? tx.method}
-                                </span>
-                                <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${tx.type === 'CHECKIN' ? 'bg-blue-100 text-blue-700'
-                                  : tx.type === 'RATO' ? 'bg-purple-100 text-purple-700'
-                                    : tx.type === 'VITRINA' ? 'bg-green-100 text-green-700'
-                                      : 'bg-slate-100 text-slate-600'
-                                  }`}>
-                                  {tx.type === 'CHECKIN' ? 'N' : tx.type === 'RATO' ? 'R' : tx.type === 'VITRINA' ? 'V' : 'S'}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-right font-semibold text-slate-800 w-28">
-                              {fmtCOP(tx.amount)}
-                            </td>
-                          </tr>
-                        ))}
+                        {group.transactions.map(tx => {
+                          const label = nightsLabel(tx);
+                          // Mostrar notes solo si no es el valor genérico "ABONO"
+                          const notesDisplay = tx.notes && tx.notes !== 'ABONO' ? tx.notes : null;
+                          return (
+                            <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                              {/* Hora */}
+                              <td className="px-4 py-3 text-slate-400 text-xs tabular-nums w-14 align-top">
+                                {formatTime(tx.paymentDate)}
+                              </td>
+                              {/* Huésped + detalle noches + observación */}
+                              <td className="px-4 py-3 align-top">
+                                <p className="text-slate-700 font-medium leading-tight">
+                                  {tx.guestName.trim() || '—'}
+                                  {tx.isPartialPayment && (
+                                    <span className="ml-1.5 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">parcial</span>
+                                  )}
+                                </p>
+                                {label && (
+                                  <p className="text-xs text-slate-400 mt-0.5">{label}</p>
+                                )}
+                                {notesDisplay && (
+                                  <p className="text-xs text-slate-500 italic mt-0.5">{notesDisplay}</p>
+                                )}
+                              </td>
+                              {/* Habitación */}
+                              <td className="px-4 py-3 text-slate-500 text-sm w-16 align-top">
+                                {tx.roomNumber ? `#${tx.roomNumber}` : '—'}
+                              </td>
+                              {/* Número reserva */}
+                              <td className="px-4 py-3 text-slate-400 text-xs w-36 align-top">
+                                {tx.reservationNumber ?? '—'}
+                              </td>
+                              {/* Método + tipo — usando TypeBadge */}
+                              <td className="px-4 py-3 w-28 align-top">
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${METHOD_COLORS[tx.method] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                    {METHOD_LABELS[tx.method] ?? tx.method}
+                                  </span>
+                                  <TypeBadge type={tx.type} notes={tx.notes} />
+                                </div>
+                              </td>
+                              {/* Monto */}
+                              <td className="px-4 py-3 text-right font-semibold text-slate-800 w-28 align-top">
+                                {fmtCOP(tx.amount)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -579,7 +938,7 @@ export default function Caja() {
               <h3 className="font-semibold text-slate-700 text-sm">Notas de cierre</h3>
               {caja.notes && <p className="text-sm text-slate-600">{caja.notes}</p>}
               {caja.discrepancyNotes && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">⚠ {caja.discrepancyNotes}</p>
+                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{caja.discrepancyNotes}</p>
               )}
             </div>
           )}
@@ -656,34 +1015,80 @@ function OpenCajaForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel
 }
 
 function WithdrawForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
-  const [amount, setAmount] = useState('');
-  const [notes, setNotes] = useState('');
+  const [amount, setAmount]     = useState('');
+  const [notes, setNotes]       = useState('');
+  const [password, setPassword] = useState('');
+  const [verified, setVerified] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
+
+  const handleVerify = async () => {
+    if (!password) return;
+    setVerifying(true);
+    setVerifyError('');
+    try {
+      await apiClient.post('/admin/verify-password', { password });
+      setVerified(true);
+    } catch {
+      setVerifyError('Contraseña incorrecta');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const mutation = useMutation({
     mutationFn: () => apiClient.post('/cash/withdraw', { amount: parseFloat(amount), notes: notes || null }),
     onSuccess, onError: (e: any) => setError(e?.response?.data?.message ?? 'Error'),
   });
+
   return (
     <>
-      <p className="text-sm text-slate-500 mb-4">Solo administradores.</p>
-      <label className="text-xs text-slate-500 mb-1 block">Monto</label>
-      <div className="relative mb-3">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-        <input type="number" min="0" step="1000" autoFocus placeholder="0" value={amount}
-          onChange={e => setAmount(e.target.value)}
-          className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
-      </div>
-      <label className="text-xs text-slate-500 mb-1 block">Notas</label>
-      <input type="text" placeholder="Motivo..." value={notes} onChange={e => setNotes(e.target.value)}
-        className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 mb-4" />
-      {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
-      <div className="flex gap-3">
-        <button onClick={onCancel} className="flex-1 border border-slate-200 rounded-lg py-2.5 text-sm text-slate-600 hover:bg-slate-50">Cancelar</button>
-        <button onClick={() => mutation.mutate()} disabled={!amount || mutation.isPending}
-          className="flex-1 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg py-2.5">
-          {mutation.isPending ? 'Registrando...' : 'Confirmar'}
-        </button>
-      </div>
+      {!verified ? (
+        <>
+          <p className="text-sm text-slate-500 mb-4">Ingresa la contraseña de administrador para continuar.</p>
+          <label className="text-xs text-slate-500 mb-1 block">Contraseña admin</label>
+          <input
+            type="password" autoFocus placeholder="••••••••" value={password}
+            onChange={e => { setPassword(e.target.value); setVerifyError(''); }}
+            onKeyDown={e => e.key === 'Enter' && password && handleVerify()}
+            className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 mb-4"
+          />
+          {verifyError && <p className="text-sm text-red-600 mb-3">{verifyError}</p>}
+          <div className="flex gap-3">
+            <button onClick={onCancel} className="flex-1 border border-slate-200 rounded-lg py-2.5 text-sm text-slate-600 hover:bg-slate-50">Cancelar</button>
+            <button onClick={handleVerify} disabled={!password || verifying}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg py-2.5">
+              {verifying ? 'Verificando...' : 'Verificar'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 mb-4 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            <span>✓</span><span>Identidad verificada</span>
+          </div>
+          <label className="text-xs text-slate-500 mb-1 block">Monto a retirar</label>
+          <div className="relative mb-3">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+            <input type="number" min="0" step="1000" autoFocus placeholder="0" value={amount}
+              onChange={e => setAmount(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && amount && mutation.mutate()}
+              className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+          </div>
+          <label className="text-xs text-slate-500 mb-1 block">Notas</label>
+          <input type="text" placeholder="Motivo del retiro..." value={notes} onChange={e => setNotes(e.target.value)}
+            className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 mb-4" />
+          {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+          <div className="flex gap-3">
+            <button onClick={onCancel} className="flex-1 border border-slate-200 rounded-lg py-2.5 text-sm text-slate-600 hover:bg-slate-50">Cancelar</button>
+            <button onClick={() => mutation.mutate()} disabled={!amount || mutation.isPending}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg py-2.5">
+              {mutation.isPending ? 'Registrando...' : 'Confirmar retiro'}
+            </button>
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -717,7 +1122,7 @@ function CloseCajaForm({ expectedBalance, onSuccess, onCancel }: {
       </div>
       {actual !== '' && (
         <div className={`rounded-lg px-4 py-2.5 text-sm mb-3 ${Math.abs(disc) === 0 ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
-          {Math.abs(disc) === 0 ? '✓ Caja cuadrada' : `${disc > 0 ? 'Sobran' : 'Faltan'} ${fmtCOP(Math.abs(disc))}`}
+          {Math.abs(disc) === 0 ? 'Caja cuadrada' : `${disc > 0 ? 'Sobran' : 'Faltan'} ${fmtCOP(Math.abs(disc))}`}
         </div>
       )}
       {hasDisc && (

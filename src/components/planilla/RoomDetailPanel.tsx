@@ -77,8 +77,8 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   const queryClient = useQueryClient();
   const reservationId = room.reservationId;
 
-  // Sección activa del panel
   const [section, setSection] = useState<'info' | 'toallas' | 'extender' | 'abono' | 'ocupantes'>('info');
+
   // Estado toallas
   const [towelQty, setTowelQty] = useState(1);
   const [towelDone, setTowelDone] = useState(false);
@@ -91,6 +91,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   // Estado abono
   const [abonoAmount, setAbonoAmount] = useState('');
   const [abonoMethod, setAbonoMethod] = useState('CASH');
+  const [abonoNotes, setAbonoNotes] = useState('');   // ← NUEVO
   const [abonoDone, setAbonoDone] = useState(false);
   const [abonoError, setAbonoError] = useState('');
   const [abonoResult, setAbonoResult] = useState<{ totalAbonado: number; saldoPendiente: number } | null>(null);
@@ -132,6 +133,8 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
       setTowelDone(true);
     },
   });
+
+  // ── Mutación: ocupantes ───────────────────────────────────────────────────
 
   const ocupantesMutation = useMutation({
     mutationFn: () =>
@@ -175,6 +178,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
       apiClient.post(`/reservations/${reservationId}/abono`, {
         amount: abonoAmount,
         method: abonoMethod,
+        notes: abonoNotes.trim() || null,   // ← NUEVO: enviar notes
       }).then(r => r.data),
     onSuccess: (data) => {
       setAbonoDone(true);
@@ -209,10 +213,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   return (
     <>
       {/* Overlay */}
-      <div
-        className="fixed inset-0 bg-black/20 z-40"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
 
       {/* Panel */}
       <div className="fixed right-0 top-0 h-full w-[420px] bg-white shadow-2xl z-50 flex flex-col">
@@ -276,14 +277,12 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
               {!loadingRes && reservation && (
                 <>
-                  {/* Alerta observaciones */}
                   {reservation.guestHasObservations && (
                     <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
                       <p className="text-sm font-medium text-red-700">Este huésped tiene observaciones registradas</p>
                     </div>
                   )}
 
-                  {/* Datos del huésped */}
                   <div>
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Huésped principal</p>
                     <div className="space-y-2">
@@ -306,7 +305,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     </div>
                   </div>
 
-                  {/* Acompañantes */}
                   {reservation.companions.length > 0 && (
                     <div>
                       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
@@ -326,7 +324,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     </div>
                   )}
 
-                  {/* Fechas */}
                   <div>
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Estadía</p>
                     <div className="space-y-2">
@@ -349,7 +346,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     </div>
                   </div>
 
-                  {/* Estado de cuenta */}
                   <div>
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Estado de cuenta</p>
                     <div className="bg-slate-50 rounded-xl p-4 space-y-2.5">
@@ -379,7 +375,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 </>
               )}
 
-              {/* Si no hay reserva */}
               {!loadingRes && !reservation && !reservationId && (
                 <div className="py-12 text-center">
                   <p className="text-sm text-slate-400">Sin reserva activa en esta habitación.</p>
@@ -420,23 +415,17 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Cantidad a entregar
-                    </label>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Cantidad a entregar</label>
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => setTowelQty(q => Math.max(1, q - 1))}
                         className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
-                      >
-                        −
-                      </button>
+                      >−</button>
                       <span className="text-2xl font-bold text-slate-800 w-8 text-center">{towelQty}</span>
                       <button
                         onClick={() => setTowelQty(q => Math.min(towels?.cleanTowels ?? 10, q + 1))}
                         className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
-                      >
-                        +
-                      </button>
+                      >+</button>
                     </div>
                     {towels && towelQty > towels.cleanTowels && (
                       <p className="text-xs text-red-500 mt-2">No hay suficientes toallas limpias</p>
@@ -444,12 +433,8 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                   </div>
 
                   <div className="bg-slate-50 rounded-lg px-4 py-3">
-                    <p className="text-xs text-slate-500">
-                      Hab. {room.roomNumber} · {reservation.guestName}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Las toallas se registran como entrega adicional sin recoger sucias.
-                    </p>
+                    <p className="text-xs text-slate-500">Hab. {room.roomNumber} · {reservation.guestName}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Las toallas se registran como entrega adicional sin recoger sucias.</p>
                   </div>
 
                   <button
@@ -467,8 +452,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
           {/* ── Sección: EXTENDER ─────────────────────────────────────────── */}
           {section === 'extender' && reservation && (
             <div className="p-6 space-y-5">
-
-              {/* Estadía actual */}
               <div className="bg-slate-50 rounded-xl p-4 space-y-2">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Estadía actual</p>
                 <div className="flex justify-between">
@@ -488,9 +471,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               {extendDone ? (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center">
                   <p className="text-sm font-medium text-emerald-700">Estadía extendida correctamente</p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Nueva salida: {newCheckOut ? formatDateLong(newCheckOut) : ''}
-                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Nueva salida: {newCheckOut ? formatDateLong(newCheckOut) : ''}</p>
                   <button
                     onClick={() => { setExtendDone(false); setNewCheckOut(''); }}
                     className="mt-3 text-xs text-emerald-600 underline"
@@ -501,23 +482,14 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Nueva fecha de salida
-                    </label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Nueva fecha de salida</label>
                     <input
-                      type="date"
-                      value={newCheckOut}
-                      min={minExtendDate}
-                      onChange={e => {
-                        setNewCheckOut(e.target.value);
-                        setExtendError('');
-                        setExtendDone(false);
-                      }}
+                      type="date" value={newCheckOut} min={minExtendDate}
+                      onChange={e => { setNewCheckOut(e.target.value); setExtendError(''); setExtendDone(false); }}
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                     />
                   </div>
 
-                  {/* Preview del cambio */}
                   {newCheckOut && reservation && (
                     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-2">
                       <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Resumen del cambio</p>
@@ -595,18 +567,12 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               {abonoDone && abonoResult ? (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center space-y-1">
                   <p className="text-sm font-medium text-emerald-700">Abono registrado correctamente</p>
-                  <p className="text-xs text-slate-500">
-                    Total abonado: {fmt(abonoResult.totalAbonado)}
-                  </p>
+                  <p className="text-xs text-slate-500">Total abonado: {fmt(abonoResult.totalAbonado)}</p>
                   <p className="text-xs text-slate-500">
                     Saldo pendiente: {abonoResult.saldoPendiente > 0 ? fmt(abonoResult.saldoPendiente) : '$0'}
                   </p>
                   <button
-                    onClick={() => {
-                      setAbonoDone(false);
-                      setAbonoAmount('');
-                      setAbonoResult(null);
-                    }}
+                    onClick={() => { setAbonoDone(false); setAbonoAmount(''); setAbonoNotes(''); setAbonoResult(null); }}
                     className="mt-2 text-xs text-emerald-600 underline"
                   >
                     Registrar otro abono
@@ -614,27 +580,25 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {/* Monto */}
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Monto del abono
-                    </label>
-                    <input
-                      type="number"
-                      value={abonoAmount}
-                      onChange={e => { setAbonoAmount(e.target.value); setAbonoError(''); }}
-                      placeholder="Ej: 50000"
-                      min="1"
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                    />
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Monto del abono</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                      <input
+                        type="number" value={abonoAmount}
+                        onChange={e => { setAbonoAmount(e.target.value); setAbonoError(''); }}
+                        placeholder="0" min="1"
+                        className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                      />
+                    </div>
                   </div>
 
+                  {/* Método */}
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Método de pago
-                    </label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Método de pago</label>
                     <select
-                      value={abonoMethod}
-                      onChange={e => setAbonoMethod(e.target.value)}
+                      value={abonoMethod} onChange={e => setAbonoMethod(e.target.value)}
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                     >
                       <option value="CASH">Efectivo</option>
@@ -644,6 +608,20 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                       <option value="NEQUI_SALOMON">Nequi Salomón</option>
                       <option value="NEQUI_BRAYAN">Nequi Brayan</option>
                     </select>
+                  </div>
+
+                  {/* Observación — NUEVO */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                      Observación <span className="text-slate-400 font-normal">(opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={abonoNotes}
+                      onChange={e => setAbonoNotes(e.target.value)}
+                      placeholder="Ej: pago con billete roto, abono parcial..."
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                    />
                   </div>
 
                   {/* Preview */}
@@ -660,6 +638,12 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                           {fmt(Math.max(0, saldoPendiente - Number(abonoAmount)))}
                         </span>
                       </div>
+                      {abonoNotes.trim() && (
+                        <div className="border-t border-blue-100 pt-1.5">
+                          <span className="text-xs text-slate-500">Obs: </span>
+                          <span className="text-xs text-slate-700">{abonoNotes.trim()}</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -680,6 +664,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               )}
             </div>
           )}
+
           {/* ── Sección: OCUPANTES ───────────────────────────────────── */}
           {section === 'ocupantes' && reservation && (
             <div className="p-6 space-y-5">
@@ -723,29 +708,22 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Nuevo número de personas
-                    </label>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Nuevo número de personas</label>
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => setNewGuests(g => Math.max(1, g - 1))}
                         className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
-                      >
-                        −
-                      </button>
+                      >−</button>
                       <span className="text-2xl font-bold text-slate-800 w-8 text-center">
                         {newGuests || reservation.numberOfGuests}
                       </span>
                       <button
                         onClick={() => setNewGuests(g => (g || reservation.numberOfGuests) + 1)}
                         className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
-                      >
-                        +
-                      </button>
+                      >+</button>
                     </div>
                   </div>
 
-                  {/* Preview */}
                   {newGuests > 0 && newGuests !== reservation.numberOfGuests && (
                     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-1.5">
                       <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Resumen del cambio</p>
@@ -765,9 +743,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                           </span>
                         </div>
                       )}
-                      <p className="text-xs text-slate-400 mt-1">
-                        El nuevo precio aplica solo para las noches restantes.
-                      </p>
+                      <p className="text-xs text-slate-400 mt-1">El nuevo precio aplica solo para las noches restantes.</p>
                     </div>
                   )}
 
@@ -779,11 +755,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
                   <button
                     onClick={() => ocupantesMutation.mutate()}
-                    disabled={
-                      !newGuests ||
-                      newGuests === reservation.numberOfGuests ||
-                      ocupantesMutation.isPending
-                    }
+                    disabled={!newGuests || newGuests === reservation.numberOfGuests || ocupantesMutation.isPending}
                     className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
                   >
                     {ocupantesMutation.isPending
@@ -794,10 +766,9 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               )}
             </div>
           )}
-
         </div>
 
-        {/* Footer — acción principal */}
+        {/* Footer */}
         {reservation && room.status === 'OCCUPIED' && !room.rato && (
           <div className="border-t border-slate-200 px-6 py-4">
             <button

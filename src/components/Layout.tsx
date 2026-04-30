@@ -46,34 +46,23 @@ function AbrirTurnoModal({ username, onSuccess }: {
   username: string;
   onSuccess: (shift: Shift) => void;
 }) {
-  const [amount,   setAmount]   = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState('');
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [expected, setExpected] = useState<number | null>(null);
   const [loadingExpected, setLoadingExpected] = useState(true);
 
   useEffect(() => {
+    // Usa el último turno cerrado (sin importar la fecha) para sugerir el monto base
     const fetchExpected = async () => {
       try {
-        const r = await apiClient.get('/shifts/today');
-        const shifts: Shift[] = r.data;
-        const lastClosed = shifts
-          .filter(s => s.closedAt !== null && s.actualCashAmount !== null)
-          .sort((a, b) => new Date(b.closedAt!).getTime() - new Date(a.closedAt!).getTime())[0];
-
-        if (lastClosed) {
-          setExpected(lastClosed.actualCashAmount!);
-          setAmount(String(Math.round(lastClosed.actualCashAmount!)));
-        } else {
-          try {
-            const c = await apiClient.get('/cash/today');
-            setExpected(c.data.baseAmount);
-            setAmount(String(Math.round(c.data.baseAmount)));
-          } catch {
-            setExpected(null);
-          }
+        const r = await apiClient.get('/shifts/last-closed');
+        if (r.data?.actualCashAmount != null) {
+          setExpected(r.data.actualCashAmount);
+          setAmount(String(Math.round(r.data.actualCashAmount)));
         }
       } catch {
+        // 404 = no hay turno cerrado previo (primer turno del sistema)
         setExpected(null);
       } finally {
         setLoadingExpected(false);
@@ -84,9 +73,19 @@ function AbrirTurnoModal({ username, onSuccess }: {
 
   const handleOpen = async () => {
     if (!amount || parseFloat(amount) < 0) return;
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
     try {
       const r = await apiClient.post('/shifts/open', { baseAmount: parseFloat(amount) });
+
+      // Abrir la caja del día con el mismo monto base
+      // Si ya existe (ej: admin la abrió antes), se ignora silenciosamente
+      try {
+        await apiClient.post('/cash/open', { baseAmount: parseFloat(amount) });
+      } catch {
+        // Caja ya abierta o error no crítico — continuar igual
+      }
+
       onSuccess(r.data);
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Error al abrir el turno');
@@ -115,13 +114,13 @@ function AbrirTurnoModal({ username, onSuccess }: {
           </div>
         ) : expected !== null ? (
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4">
-            <p className="text-xs text-blue-500 mb-0.5">Efectivo esperado del turno anterior</p>
+            <p className="text-xs text-blue-500 mb-0.5">Efectivo al cierre del turno anterior</p>
             <p className="text-xl font-bold text-blue-800">{fmtCOP(expected)}</p>
             <p className="text-xs text-blue-400 mt-1">Verifica que coincida con lo que recibiste</p>
           </div>
         ) : (
           <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 mb-4 text-sm text-slate-500">
-            Primer turno del día — ingresa el efectivo disponible
+            Primer turno registrado — ingresa el efectivo disponible
           </div>
         )}
 
@@ -142,7 +141,7 @@ function AbrirTurnoModal({ username, onSuccess }: {
 
         {expected !== null && amount && Math.abs(parseFloat(amount) - expected) > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 mb-4 text-sm text-amber-700">
-            ⚠ Diferencia de {fmtCOP(Math.abs(parseFloat(amount) - expected))} con el turno anterior
+            Diferencia de {fmtCOP(Math.abs(parseFloat(amount) - expected))} con el turno anterior
           </div>
         )}
 
@@ -175,25 +174,26 @@ function CerrarTurnoModal({ shift, onSuccess, onCancel }: {
   onSuccess: () => void;
   onCancel: () => void;
 }) {
-  const [actualCash,       setActual]    = useState('');
-  const [notes,            setNotes]     = useState('');
+  const [actualCash, setActual] = useState('');
+  const [notes, setNotes] = useState('');
   const [discrepancyNotes, setDiscNotes] = useState('');
-  const [loading,          setLoading]   = useState(false);
-  const [error,            setError]     = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const expected    = shift.baseAmount + shift.totalSales - shift.totalExpenses - shift.totalWithdrawn;
-  const actual      = parseFloat(actualCash) || 0;
+  const expected = shift.baseAmount + shift.totalSales - shift.totalExpenses - shift.totalWithdrawn;
+  const actual = parseFloat(actualCash) || 0;
   const discrepancy = actual - expected;
-  const hasDisc     = actualCash !== '' && Math.abs(discrepancy) > 0;
+  const hasDisc = actualCash !== '' && Math.abs(discrepancy) > 0;
 
   const handleClose = async () => {
     if (!actualCash) return;
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
     try {
       await apiClient.post('/shifts/close', {
-        actualCashAmount:  actual,
-        notes:             notes            || null,
-        discrepancyNotes:  discrepancyNotes || null,
+        actualCashAmount: actual,
+        notes: notes || null,
+        discrepancyNotes: discrepancyNotes || null,
       });
       onSuccess();
     } catch (e: any) {
@@ -205,8 +205,8 @@ function CerrarTurnoModal({ shift, onSuccess, onCancel }: {
 
   const duration = () => {
     const start = new Date(shift.openedAt);
-    const now   = new Date();
-    const mins  = Math.floor((now.getTime() - start.getTime()) / 60000);
+    const now = new Date();
+    const mins = Math.floor((now.getTime() - start.getTime()) / 60000);
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
@@ -221,8 +221,8 @@ function CerrarTurnoModal({ shift, onSuccess, onCancel }: {
         <div className="bg-slate-50 border border-slate-100 rounded-xl divide-y divide-slate-100 mb-5 text-sm">
           {[
             ['Monto base recibido', fmtCOP(shift.baseAmount)],
-            ['Ventas registradas',  fmtCOP(shift.totalSales)],
-            ...(shift.totalExpenses  > 0 ? [['Gastos',             fmtCOP(shift.totalExpenses)]]  : []),
+            ['Ventas registradas', fmtCOP(shift.totalSales)],
+            ...(shift.totalExpenses > 0 ? [['Gastos', fmtCOP(shift.totalExpenses)]] : []),
             ...(shift.totalWithdrawn > 0 ? [['Retirado por admin', fmtCOP(shift.totalWithdrawn)]] : []),
           ].map(([k, v]) => (
             <div key={k} className="flex justify-between px-4 py-2.5">
@@ -247,13 +247,12 @@ function CerrarTurnoModal({ shift, onSuccess, onCancel }: {
         </div>
 
         {actualCash !== '' && (
-          <div className={`rounded-lg px-4 py-2.5 text-sm mb-3 ${
-            Math.abs(discrepancy) === 0
+          <div className={`rounded-lg px-4 py-2.5 text-sm mb-3 ${Math.abs(discrepancy) === 0
               ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
               : 'bg-red-50 border border-red-200 text-red-700'
-          }`}>
+            }`}>
             {Math.abs(discrepancy) === 0
-              ? '✓ Caja cuadrada'
+              ? 'Caja cuadrada'
               : `${discrepancy > 0 ? 'Sobran' : 'Faltan'} ${fmtCOP(Math.abs(discrepancy))}`}
           </div>
         )}
@@ -295,26 +294,43 @@ export default function Layout() {
   const navigate = useNavigate();
   const isAdmin = user?.role === 'ADMIN';
 
-  const [activeShift,    setActiveShift]    = useState<Shift | null>(null);
-  const [shiftChecked,   setShiftChecked]   = useState(false);
-  const [showOpenShift,  setShowOpenShift]  = useState(false);
+  const [activeShift, setActiveShift] = useState<Shift | null>(null);
+  const [shiftChecked, setShiftChecked] = useState(false);
+  const [showOpenShift, setShowOpenShift] = useState(false);
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [showShiftToast, setShowShiftToast] = useState(false);
 
   useEffect(() => {
-    if (isAdmin) { setShiftChecked(true); return; }
+    // Admin nunca necesita turno
+    if (isAdmin) {
+      setShiftChecked(true);
+      return;
+    }
+
     const checkShift = async () => {
       try {
-        const r = await apiClient.get('/shifts/my');
-        setActiveShift(r.data);
+        // Buscar turno activo global (sin filtro de fecha ni usuario)
+        const r = await apiClient.get('/shifts/active');
+        const shift: Shift = r.data;
+
+        if (shift.openedBy === user?.username) {
+          // Es mi turno (puede ser de ayer u hoy) — lo retomo
+          setActiveShift(shift);
+        } else {
+          // Hay un turno activo de otro recepcionista
+          // No bloqueamos — simplemente no asignamos turno propio
+          setActiveShift(null);
+        }
       } catch {
+        // 404 = no hay ningún turno activo → pedir abrir uno
         setShowOpenShift(true);
       } finally {
         setShiftChecked(true);
       }
     };
+
     checkShift();
-  }, [isAdmin]);
+  }, [isAdmin, user?.username]);
 
   const handleShiftOpened = (shift: Shift) => {
     setActiveShift(shift);
@@ -325,6 +341,7 @@ export default function Layout() {
 
   const handleLogout = () => {
     if (!isAdmin && activeShift) {
+      // Recepcionista con turno abierto → pedir cierre antes de salir
       setShowCloseShift(true);
     } else {
       logout();
@@ -369,10 +386,9 @@ export default function Layout() {
           {navItems.map((item) => (
             <NavLink key={item.path} to={item.path} end={item.exact}
               className={({ isActive }) =>
-                `block px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? 'bg-[#383836] text-white font-medium'
-                    : 'text-[#a8a79f] hover:bg-[#2a2a28] hover:text-white'
+                `block px-3 py-2 rounded-lg text-sm transition-colors ${isActive
+                  ? 'bg-[#383836] text-white font-medium'
+                  : 'text-[#a8a79f] hover:bg-[#2a2a28] hover:text-white'
                 }`}>
               {item.label}
             </NavLink>
@@ -386,10 +402,9 @@ export default function Layout() {
               {adminItems.map((item) => (
                 <NavLink key={item.path} to={item.path}
                   className={({ isActive }) =>
-                    `block px-3 py-2 rounded-lg text-sm transition-colors ${
-                      isActive
-                        ? 'bg-[#383836] text-white font-medium'
-                        : 'text-[#a8a79f] hover:bg-[#2a2a28] hover:text-white'
+                    `block px-3 py-2 rounded-lg text-sm transition-colors ${isActive
+                      ? 'bg-[#383836] text-white font-medium'
+                      : 'text-[#a8a79f] hover:bg-[#2a2a28] hover:text-white'
                     }`}>
                   {item.label}
                 </NavLink>

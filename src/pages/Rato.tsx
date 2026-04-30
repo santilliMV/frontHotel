@@ -44,17 +44,17 @@ interface Room {
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const PAYMENT_METHODS = [
-  { value: 'CASH',          label: 'Efectivo' },
-  { value: 'CARD',          label: 'Tarjeta' },
-  { value: 'TRANSFER',      label: 'Transferencia' },
-  { value: 'QR',            label: 'QR' },
+  { value: 'CASH', label: 'Efectivo' },
+  { value: 'CARD', label: 'Tarjeta' },
+  { value: 'TRANSFER', label: 'Transferencia' },
+  { value: 'QR', label: 'QR' },
   { value: 'NEQUI_SALOMON', label: 'Nequi Salomón' },
-  { value: 'NEQUI_BRAYAN',  label: 'Nequi Brayan' },
+  { value: 'NEQUI_BRAYAN', label: 'Nequi Brayan' },
 ];
 
 const OCCUPANT_LABELS: Record<OccupantType, string> = {
-  INDIVIDUAL:      'Individual',
-  PAREJA:          'Pareja',
+  INDIVIDUAL: 'Individual',
+  PAREJA: 'Pareja',
   MULTIPLE_PERSON: 'Múltiple',
 };
 
@@ -114,11 +114,11 @@ function getErrorMsg(e: unknown) {
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
-const fetchActive  = async (): Promise<RatoResponse[]> => (await apiClient.get('/rato/active')).data;
-const fetchRooms   = async (): Promise<Room[]>         => (await apiClient.get('/rooms')).data;
-const postEntry    = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/entry', body)).data;
+const fetchActive = async (): Promise<RatoResponse[]> => (await apiClient.get('/rato/active')).data;
+const fetchRooms = async (): Promise<Room[]> => (await apiClient.get('/rooms')).data;
+const postEntry = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/entry', body)).data;
 const postCheckout = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/checkout', body)).data;
-const postConvert  = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/convert-to-night', body)).data;
+const postConvert = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/convert-to-night', body)).data;
 
 // ── Subcomponentes ────────────────────────────────────────────────────────────
 
@@ -126,9 +126,8 @@ function CountdownBadge({ expectedCheckOutTime }: { expectedCheckOutTime: string
   const remaining = useCountdown(expectedCheckOutTime);
   const isLate = remaining <= 0;
   return (
-    <span className={`font-mono text-sm font-semibold tabular-nums ${
-      isLate ? 'text-red-600' : remaining < 600000 ? 'text-amber-600' : 'text-green-700'
-    }`}>
+    <span className={`font-mono text-sm font-semibold tabular-nums ${isLate ? 'text-red-600' : remaining < 600000 ? 'text-amber-600' : 'text-green-700'
+      }`}>
       {formatCountdown(remaining)}
     </span>
   );
@@ -139,11 +138,10 @@ function PaymentMethodGrid({ value, onChange }: { value: string; onChange: (v: s
     <div className="grid grid-cols-3 gap-2">
       {PAYMENT_METHODS.map(m => (
         <button key={m.value} onClick={() => onChange(m.value)}
-          className={`text-xs py-2 px-1 rounded-lg border transition-colors ${
-            value === m.value
-              ? 'bg-slate-800 text-white border-slate-800'
-              : 'border-slate-300 text-slate-600 hover:border-slate-400'
-          }`}>
+          className={`text-xs py-2 px-1 rounded-lg border transition-colors ${value === m.value
+            ? 'bg-slate-800 text-white border-slate-800'
+            : 'border-slate-300 text-slate-600 hover:border-slate-400'
+            }`}>
           {m.label}
         </button>
       ))}
@@ -183,7 +181,7 @@ function NuevaEntradaModal({ rooms, onClose, onSaved }: {
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <div>
             <h2 className="text-base font-semibold text-slate-800">Nueva entrada — Rato</h2>
-            <p className="text-xs text-slate-500 mt-0.5">$40.000 · 3 horas · 2 toallas</p>
+            <p className="text-xs text-slate-500 mt-0.5">$40.000 · 3 horas · 1 toalla en habitación</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
         </div>
@@ -223,7 +221,7 @@ function NuevaEntradaModal({ rooms, onClose, onSaved }: {
               <span className="font-semibold text-slate-800">$40.000</span>
             </div>
             <div className="flex justify-between text-xs text-slate-400">
-              <span>Toallas entregadas</span><span>2</span>
+              <span>Toallas</span><span>1 en habitación</span>
             </div>
             <div className="flex justify-between text-xs text-slate-400">
               <span>Método</span>
@@ -324,9 +322,8 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
           <div className="space-y-2">
             <p className="text-xs font-medium text-slate-600 uppercase tracking-wide">¿Cómo sale?</p>
 
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-              option === 'normal' ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
-            }`}>
+            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${option === 'normal' ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
+              }`}>
               <input type="radio" name="co" value="normal" checked={option === 'normal'}
                 onChange={() => setOption('normal')} className="mt-0.5" />
               <div>
@@ -335,9 +332,8 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
               </div>
             </label>
 
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-              option === 'late' ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
-            }`}>
+            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${option === 'late' ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
+              }`}>
               <input type="radio" name="co" value="late" checked={option === 'late'}
                 onChange={() => setOption('late')} className="mt-0.5" />
               <div className="flex-1">
@@ -385,15 +381,15 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
 function ConvertToNightModal({ rato, onClose, onSaved }: {
   rato: RatoResponse; onClose: () => void; onSaved: () => void;
 }) {
-  const [step, setStep]                   = useState<1 | 2>(1);
-  const [firstName, setFirstName]         = useState('');
-  const [lastName, setLastName]           = useState('');
-  const [phone, setPhone]                 = useState('');
-  const [occupantType, setOccupantType]   = useState<OccupantType>('PAREJA');
+  const [step, setStep] = useState<1 | 2>(1);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [occupantType, setOccupantType] = useState<OccupantType>('PAREJA');
   const [numberOfGuests, setNumberOfGuests] = useState('1');
-  const [checkOutDate, setCheckOutDate]   = useState(tomorrowStr());
+  const [checkOutDate, setCheckOutDate] = useState(tomorrowStr());
   const [paymentMethod, setPaymentMethod] = useState('CASH');
-  const [error, setError]                 = useState('');
+  const [error, setError] = useState('');
 
   const mutation = useMutation({
     mutationFn: postConvert,
@@ -404,17 +400,17 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
   const handleNext = () => {
     setError('');
     if (!firstName.trim()) { setError('El nombre es obligatorio.'); return; }
-    if (!phone.trim())     { setError('El teléfono es obligatorio.'); return; }
+    if (!phone.trim()) { setError('El teléfono es obligatorio.'); return; }
     setStep(2);
   };
 
   const handleSubmit = () => {
     setError('');
     mutation.mutate({
-      ratoServiceId:  rato.id,
-      firstName:      firstName.trim(),
-      lastName:       lastName.trim() || undefined,
-      phone:          phone.trim(),
+      ratoServiceId: rato.id,
+      firstName: firstName.trim(),
+      lastName: lastName.trim() || undefined,
+      phone: phone.trim(),
       occupantType,
       numberOfGuests: parseInt(numberOfGuests) || 1,
       checkOutDate,
@@ -437,9 +433,8 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
         <div className="flex items-center gap-2 px-6 pt-4">
           {([1, 2] as const).map(s => (
             <div key={s} className="flex items-center gap-2">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
-                step === s ? 'bg-slate-800 text-white' : step > s ? 'bg-slate-400 text-white' : 'bg-slate-100 text-slate-400'
-              }`}>{s}</div>
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${step === s ? 'bg-slate-800 text-white' : step > s ? 'bg-slate-400 text-white' : 'bg-slate-100 text-slate-400'
+                }`}>{s}</div>
               <span className={`text-xs ${step === s ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>
                 {s === 1 ? 'Datos del huésped' : 'Reserva y pago'}
               </span>
@@ -481,9 +476,8 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
                 <div className="flex gap-2">
                   {(['INDIVIDUAL', 'PAREJA', 'MULTIPLE_PERSON'] as OccupantType[]).map(t => (
                     <button key={t} onClick={() => setOccupantType(t)}
-                      className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${
-                        occupantType === t ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:border-slate-400'
-                      }`}>
+                      className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${occupantType === t ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:border-slate-400'
+                        }`}>
                       {OCCUPANT_LABELS[t]}
                     </button>
                   ))}
@@ -577,9 +571,8 @@ function RatoCard({ rato, onCheckout }: { rato: RatoResponse; onCheckout: (r: Ra
   const isLate = remaining <= 0;
 
   return (
-    <div className={`bg-white border rounded-xl px-5 py-4 transition-colors ${
-      isLate ? 'border-red-300 bg-red-50/30' : 'border-slate-200'
-    }`}>
+    <div className={`bg-white border rounded-xl px-5 py-4 transition-colors ${isLate ? 'border-red-300 bg-red-50/30' : 'border-slate-200'
+      }`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -599,9 +592,8 @@ function RatoCard({ rato, onCheckout }: { rato: RatoResponse; onCheckout: (r: Ra
           </div>
           <div className="text-xs text-slate-500">{formatCOP(rato.basePriceRato)}</div>
           <button onClick={() => onCheckout(rato)}
-            className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              isLate ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-slate-800 text-white hover:bg-slate-700'
-            }`}>
+            className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${isLate ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-slate-800 text-white hover:bg-slate-700'
+              }`}>
             {isLate ? 'Checkout urgente' : 'Checkout'}
           </button>
         </div>
@@ -614,8 +606,8 @@ function RatoCard({ rato, onCheckout }: { rato: RatoResponse; onCheckout: (r: Ra
 
 function RatoClosedCard({ rato }: { rato: RatoResponse }) {
   const statusColors: Record<RatoStatus, string> = {
-    ACTIVE:            'bg-green-100 text-green-700',
-    CHECKED_OUT:       'bg-slate-100 text-slate-600',
+    ACTIVE: 'bg-green-100 text-green-700',
+    CHECKED_OUT: 'bg-slate-100 text-slate-600',
     EXTENDED_TO_NIGHT: 'bg-blue-100 text-blue-700',
   };
   return (
@@ -653,9 +645,9 @@ function RatoClosedCard({ rato }: { rato: RatoResponse }) {
 export default function Rato() {
   const today = toLocalDateStr(new Date());
   const [selectedDate, setSelectedDate] = useState(today);
-  const [showEntrada, setShowEntrada]   = useState(false);
+  const [showEntrada, setShowEntrada] = useState(false);
   const [checkoutRato, setCheckoutRato] = useState<RatoResponse | null>(null);
-  const [convertRato, setConvertRato]   = useState<RatoResponse | null>(null);
+  const [convertRato, setConvertRato] = useState<RatoResponse | null>(null);
   const queryClient = useQueryClient();
 
   const isToday = selectedDate === today;
@@ -687,17 +679,17 @@ export default function Rato() {
   };
 
   const activeRatos = isToday ? active.filter(r => r.status === 'ACTIVE') : [];
-  const lateCount   = activeRatos.filter(r => r.isLate).length;
+  const lateCount = activeRatos.filter(r => r.isLate).length;
 
   // Para historial: todos los del día seleccionado
-  const historyAll     = history;
-  const historyDone    = historyAll.filter(r => r.status !== 'ACTIVE');
-  const historyActive  = historyAll.filter(r => r.status === 'ACTIVE');
+  const historyAll = history;
+  const historyDone = historyAll.filter(r => r.status !== 'ACTIVE');
+  const historyActive = historyAll.filter(r => r.status === 'ACTIVE');
   const totalRecaudado = historyAll.reduce((sum, r) =>
     sum + r.basePriceRato + (r.lateCharge ?? 0) + (r.nightExtensionCharge ?? 0), 0);
 
   const isLoading = isToday ? loadingActive : loadingHistory;
-  const isError   = isToday ? errorActive : errorHistory;
+  const isError = isToday ? errorActive : errorHistory;
 
   const changeDate = (delta: number) => {
     const d = new Date(selectedDate + 'T12:00:00');
@@ -767,9 +759,8 @@ export default function Rato() {
             <p className="text-2xl font-bold text-slate-800">{historyAll.length}</p>
             <p className="text-xs text-slate-500 mt-0.5">Total del día</p>
           </div>
-          <div className={`border rounded-xl px-4 py-3 text-center ${
-            isToday && lateCount > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'
-          }`}>
+          <div className={`border rounded-xl px-4 py-3 text-center ${isToday && lateCount > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'
+            }`}>
             <p className={`text-2xl font-bold ${isToday && lateCount > 0 ? 'text-red-600' : 'text-slate-800'}`}>
               {isToday ? activeRatos.length : historyActive.length}
             </p>

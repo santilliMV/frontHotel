@@ -363,7 +363,7 @@ export default function CheckIn() {
   const [checkOutDate, setCheckOutDate] = useState(prefill?.checkOutDate ?? tomorrow());
   const [numberOfGuests, setNumberOfGuests] = useState(prefill?.numberOfGuests ?? 1);
   const [occupantType, setOccupantType] = useState<'INDIVIDUAL' | 'PAREJA' | 'MULTIPLE_PERSON'>(prefill?.occupantType ?? 'INDIVIDUAL');
-  const [towels, setTowels] = useState(prefill?.numberOfGuests ?? 1);
+  const [towels, setTowels] = useState(Math.max(0, (prefill?.numberOfGuests ?? 1) - 1));
 
   // Price
   const [priceData, setPriceData] = useState<PriceResponse | null>(null);
@@ -439,7 +439,9 @@ export default function CheckIn() {
     }, 600);
   }, [selectedRoomTypeId, occupantType, checkInDate, checkOutDate, numberOfGuests]);
 
-  useEffect(() => { setTowels(numberOfGuests); }, [numberOfGuests]);
+  useEffect(() => {
+    setTowels(Math.max(0, numberOfGuests - 1));
+  }, [numberOfGuests]);
 
   // Sincronizar occupantType y restricciones de personas
   useEffect(() => {
@@ -518,36 +520,36 @@ export default function CheckIn() {
         const totalDeposit = isCourtesy ? 0 : validPayments.reduce((sum, p) => sum + p.amount, 0);
 
         const reservation = await checkInApi.createReservation({
-          guestId:         selectedGuest.id,
-          firstName:       selectedGuest.firstName,
-          lastName:        selectedGuest.lastName ?? undefined,
-          phone:           selectedGuest.phone,
-          roomTypeId:      selectedRoomTypeId,
-          roomId:          selectedRoomId,
+          guestId: selectedGuest.id,
+          firstName: selectedGuest.firstName,
+          lastName: selectedGuest.lastName ?? undefined,
+          phone: selectedGuest.phone,
+          roomTypeId: selectedRoomTypeId,
+          roomId: selectedRoomId,
           checkInDate,
           checkOutDate,
           numberOfGuests,
           occupantType,
-          companions:      companions.filter(c => c.name?.trim()),
-          depositAmount:   totalDeposit > 0 ? totalDeposit : undefined,
-          depositMethod:   validPayments.length > 0 ? validPayments[0].method : undefined,
+          companions: companions.filter(c => c.name?.trim()),
+          depositAmount: totalDeposit > 0 ? totalDeposit : undefined,
+          depositMethod: validPayments.length > 0 ? validPayments[0].method : undefined,
           depositPayments: validPayments.length > 0 ? validPayments : undefined,
           requiresElectronicInvoice: electronicInvoice,
-          discountAmount:  discountApproved && discountValue > 0 ? discountValue : undefined,
-          discountReason:  discountApproved && discountValue > 0 ? discountReason : undefined,
+          discountAmount: discountApproved && discountValue > 0 ? discountValue : undefined,
+          discountReason: discountApproved && discountValue > 0 ? discountReason : undefined,
           additionalCharge: additionalValue > 0 ? additionalValue : undefined,
           additionalChargeReason: additionalValue > 0 ? additionalChargeReason : undefined,
-          isCourtesy:      isCourtesy,
-          courtesyReason:  isCourtesy ? courtesyReason : undefined,
+          isCourtesy: isCourtesy,
+          courtesyReason: isCourtesy ? courtesyReason : undefined,
         });
         reservationId = reservation.id as string;
       }
 
       const checkIn = await checkInApi.doCheckIn({
         reservationId,
-        roomId:             selectedRoomId,
+        roomId: selectedRoomId,
         earlyCheckInOption: earlyOpt ?? undefined,
-        towelsDelivered:    towels,
+        towelsDelivered: towels,
       });
       setResult(checkIn);
       setStep('success');
@@ -586,7 +588,7 @@ export default function CheckIn() {
   // Opciones de número de personas según occupantType
   const guestOptions = occupantType === 'INDIVIDUAL' ? [1]
     : occupantType === 'PAREJA' ? [2]
-    : [2, 3, 4, 5, 6];
+      : [2, 3, 4, 5, 6];
 
   const fi = "w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 placeholder:text-slate-400";
   const fl = "text-xs text-slate-500 mb-1 block";
@@ -609,8 +611,8 @@ export default function CheckIn() {
             <div key={s.key} className={`flex items-center ${i < STEPS.length - 1 ? 'flex-1' : ''}`}>
               <div className="flex items-center gap-2">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 flex-shrink-0 transition-all ${i < currentIdx ? 'bg-slate-800 border-slate-800 text-white' :
-                    i === currentIdx ? 'bg-white border-slate-800 text-slate-800' :
-                      'bg-white border-slate-200 text-slate-400'
+                  i === currentIdx ? 'bg-white border-slate-800 text-slate-800' :
+                    'bg-white border-slate-200 text-slate-400'
                   }`}>
                   {i < currentIdx ? '✓' : i + 1}
                 </div>
@@ -747,8 +749,8 @@ export default function CheckIn() {
               <div key={rt.id}
                 onClick={() => { setSelectedRoomTypeId(rt.id); setSelectedRoomId(''); setPriceData(null); }}
                 className={`border-2 rounded-xl p-3 cursor-pointer transition-all text-center ${selectedRoomTypeId === rt.id
-                    ? 'border-slate-800 bg-slate-50'
-                    : 'border-slate-200 hover:border-slate-400'
+                  ? 'border-slate-800 bg-slate-50'
+                  : 'border-slate-200 hover:border-slate-400'
                   }`}>
                 <div className="text-sm font-semibold text-slate-800">{rt.name}</div>
                 <div className="text-xs text-slate-400 mt-0.5">Cap. {rt.capacity}</div>
@@ -790,7 +792,7 @@ export default function CheckIn() {
             <label className={`${fl} mb-2`}>Toallas a entregar</label>
             <div className="flex items-center gap-3">
               <div className="flex">
-                <button onClick={() => setTowels(t => Math.max(1, t - 1))}
+                <button onClick={() => setTowels(t => Math.max(0, t - 1))}
                   className="w-9 h-9 border border-slate-200 rounded-l-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-lg flex items-center justify-center">−</button>
                 <div className="w-12 h-9 border-t border-b border-slate-200 flex items-center justify-center text-sm font-bold text-slate-800">{towels}</div>
                 <button onClick={() => setTowels(t => t + 1)}
@@ -815,10 +817,10 @@ export default function CheckIn() {
                     <div key={r.id}
                       onClick={() => setSelectedRoomId(r.id)}
                       className={`flex items-center justify-between border-2 rounded-xl px-4 py-3 cursor-pointer transition-all ${selectedRoomId === r.id
-                          ? 'border-slate-800 bg-slate-50'
-                          : r.status === 'RESERVED'
-                            ? 'border-purple-200 hover:border-purple-400'
-                            : 'border-slate-200 hover:border-slate-400'
+                        ? 'border-slate-800 bg-slate-50'
+                        : r.status === 'RESERVED'
+                          ? 'border-purple-200 hover:border-purple-400'
+                          : 'border-slate-200 hover:border-slate-400'
                         }`}>
                       <div>
                         <div className="text-base font-bold text-slate-800">Hab. {r.roomNumber}</div>

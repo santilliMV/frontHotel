@@ -43,7 +43,6 @@ const CATEGORIES: { value: string; label: string }[] = [
   { value: 'MANTENIMIENTO', label: 'Mantenimiento' },
   { value: 'SERVICIOS',     label: 'Servicios' },
   { value: 'SUELDOS',       label: 'Sueldos' },
-  { value: 'CORTESIA',      label: 'Cortesía' },
   { value: 'OTRO',          label: 'Otro' },
 ];
 

@@ -27,6 +27,7 @@ interface RoomByDate {
   reservationId: string | null
   reservationNumber: string | null
   rato: boolean
+  checkedOut: boolean
 }
 
 interface SystemUser {
@@ -53,6 +54,7 @@ interface VitrinaTransaction {
   reservationNumber: string | null
   guestName: string
   roomNumber: string | null
+  paymentMethod: string | null  // ← agregar
 }
 
 type ConsumerType = 'GUEST' | 'ADMIN' | 'EMPLOYEE' | 'EXTERNAL'
@@ -69,23 +71,23 @@ const toLocalDateStr = (d: Date) => {
 }
 
 const CONSUMER_LABEL: Record<string, string> = {
-  GUEST:    'Huésped',
+  GUEST: 'Huésped',
   EXTERNAL: 'Externo',
   EMPLOYEE: 'Empleado',
-  ADMIN:    'Admin',
+  ADMIN: 'Admin',
 }
 
 const CONSUMER_COLOR: Record<string, string> = {
-  GUEST:    'bg-blue-50 text-blue-700 border-blue-200',
+  GUEST: 'bg-blue-50 text-blue-700 border-blue-200',
   EXTERNAL: 'bg-slate-100 text-slate-600 border-slate-200',
   EMPLOYEE: 'bg-amber-50 text-amber-700 border-amber-200',
-  ADMIN:    'bg-violet-50 text-violet-700 border-violet-200',
+  ADMIN: 'bg-violet-50 text-violet-700 border-violet-200',
 }
 
 const CATEGORY_COLOR: Record<string, string> = {
   BEVERAGE: 'bg-blue-50 text-blue-700 border-blue-200',
-  SNACK:    'bg-amber-50 text-amber-700 border-amber-200',
-  OTHER:    'bg-slate-100 text-slate-600 border-slate-200',
+  SNACK: 'bg-amber-50 text-amber-700 border-amber-200',
+  OTHER: 'bg-slate-100 text-slate-600 border-slate-200',
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -411,11 +413,10 @@ function ModalConsume({
                   <button
                     key={p.id}
                     onClick={() => addToCart(p)}
-                    className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${
-                      inCart
+                    className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${inCart
                         ? 'border-slate-800 bg-slate-50'
                         : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                    }`}>
+                      }`}>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-slate-800">{p.name}</p>
@@ -480,18 +481,17 @@ function ModalConsume({
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Consumidor</p>
                 <div className="grid grid-cols-4 gap-1">
                   {([
-                    { value: 'GUEST',    label: 'Huésped' },
+                    { value: 'GUEST', label: 'Huésped' },
                     { value: 'EXTERNAL', label: 'Externo' },
                     { value: 'EMPLOYEE', label: 'Empleado' },
-                    { value: 'ADMIN',    label: 'Admin' },
+                    { value: 'ADMIN', label: 'Admin' },
                   ] as { value: ConsumerType; label: string }[]).map(opt => (
                     <button key={opt.value}
                       onClick={() => { setConsumerType(opt.value); setPasswordVerified(false); setAdminUsername(''); setAdminPassword('') }}
-                      className={`py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                        consumerType === opt.value
+                      className={`py-1.5 text-xs font-medium rounded-lg border transition-colors ${consumerType === opt.value
                           ? 'bg-slate-800 text-white border-slate-800'
                           : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                      }`}>
+                        }`}>
                       {opt.label}
                     </button>
                   ))}
@@ -515,15 +515,13 @@ function ModalConsume({
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">
                     <button onClick={() => setAnnotateToRoom(true)}
-                      className={`py-2 text-xs font-medium rounded-lg border transition-colors ${
-                        annotateToRoom ? 'bg-amber-600 text-white border-amber-600' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                      }`}>
+                      className={`py-2 text-xs font-medium rounded-lg border transition-colors ${annotateToRoom ? 'bg-amber-600 text-white border-amber-600' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                        }`}>
                       Anotar a habitación
                     </button>
                     <button onClick={() => setAnnotateToRoom(false)}
-                      className={`py-2 text-xs font-medium rounded-lg border transition-colors ${
-                        !annotateToRoom ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                      }`}>
+                      className={`py-2 text-xs font-medium rounded-lg border transition-colors ${!annotateToRoom ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                        }`}>
                       Paga ahora
                     </button>
                   </div>
@@ -808,7 +806,14 @@ export default function Vitrina() {
     queryFn: () => apiClient.get(`/rooms/by-date?date=${toLocalDateStr(new Date())}`).then(r => r.data),
   })
 
-  const occupiedRooms = rooms.filter(r => r.status === 'OCCUPIED' && r.reservationId && !r.rato)
+  // DESPUÉS:
+const occupiedRooms = rooms.filter(r => 
+  r.status === 'OCCUPIED' && 
+  r.reservationId && 
+  r.guestName &&
+  !r.rato &&
+  !r.checkedOut
+)
 
   const { data: transactions = [], isLoading: loadingTx, refetch: refetchTx } = useQuery<VitrinaTransaction[]>({
     queryKey: ['vitrina-transactions', historyDate],
@@ -880,18 +885,17 @@ export default function Vitrina() {
           placeholder="Buscar producto..." />
         <div className="flex gap-1.5">
           {[
-            { value: 'ALL',      label: 'Todos' },
+            { value: 'ALL', label: 'Todos' },
             { value: 'BEVERAGE', label: 'Bebidas' },
-            { value: 'SNACK',    label: 'Snacks' },
-            { value: 'OTHER',    label: 'Otros' },
+            { value: 'SNACK', label: 'Snacks' },
+            { value: 'OTHER', label: 'Otros' },
           ].map(opt => (
             <button key={opt.value}
               onClick={() => setFilterCategory(opt.value)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                filterCategory === opt.value
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${filterCategory === opt.value
                   ? 'bg-slate-800 text-white border-slate-800'
                   : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-              }`}>
+                }`}>
               {opt.label}
             </button>
           ))}
@@ -1129,6 +1133,10 @@ export default function Vitrina() {
                           </span>
                         ) : tx.consumedBy === 'ADMIN' ? (
                           <span className="text-xs text-slate-400">—</span>
+                        ) : tx.paymentMethod ? (
+                          <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded">
+                            {METHOD_LABELS[tx.paymentMethod] ?? tx.paymentMethod}
+                          </span>
                         ) : (
                           <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded">
                             Pagado

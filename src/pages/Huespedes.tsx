@@ -3,6 +3,8 @@ import { guestsApi } from '../api/hotel-api';
 import type { GuestResponse, GuestRequest } from '../api/hotel-api';
 import { COLOMBIA_CITIES, COUNTRIES, DOC_TYPES } from '../constants';
 import apiClient from '../api/client';
+import { usePageTitle } from '../hooks/usePageTitle';
+
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -397,6 +399,8 @@ function GuestCard({ guest, onEdit, onHistory }: {
 type Modal = 'none' | 'create' | 'edit';
 
 export default function Huespedes() {
+    usePageTitle('Huespedes');
+
   const [query, setQuery]       = useState('');
   const [guests, setGuests]     = useState<GuestResponse[]>([]);
   const [loading, setLoading]   = useState(false);

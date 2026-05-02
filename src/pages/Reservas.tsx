@@ -6,6 +6,8 @@ import { reservationsApi } from '../api/reservations';
 import { formatCurrency, formatDate } from '../utils/format';
 import NuevaReservaModal from '../components/reservas/NuevaReservaModal';
 import apiClient from '../api/client';
+import { usePageTitle } from '../hooks/usePageTitle';
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,7 @@ const isPast = (s: string) => s < TODAY;
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function Reservas() {
+  usePageTitle('Reservas');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 

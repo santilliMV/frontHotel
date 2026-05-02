@@ -3,6 +3,8 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import apiClient from '../api/client';
 import type { ReservationResponse } from '../types';
 import { useLocation } from 'react-router-dom';
+import { usePageTitle } from '../hooks/usePageTitle';
+
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +63,7 @@ function formatDate(d: string) {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function CheckOut() {
+  usePageTitle('Check-out');
 
   const location = useLocation();
 

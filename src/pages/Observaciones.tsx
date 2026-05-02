@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../api/client'
+import { usePageTitle } from '../hooks/usePageTitle';
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +229,7 @@ function ObservationCard({
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function Observaciones() {
+    usePageTitle('Observaciones');
   const qc = useQueryClient()
   const [showModal, setShowModal] = useState(false)
   const [showResolved, setShowResolved] = useState(false)

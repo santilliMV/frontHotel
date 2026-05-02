@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../api/client';
+import { usePageTitle } from '../hooks/usePageTitle';
+
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -642,6 +644,7 @@ function RatoClosedCard({ rato }: { rato: RatoResponse }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 
 export default function Rato() {
+    usePageTitle('Rato');
   const today = toLocalDateStr(new Date());
   const [selectedDate, setSelectedDate] = useState(today);
   const [showEntrada, setShowEntrada] = useState(false);

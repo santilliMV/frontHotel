@@ -9,6 +9,8 @@ import type { RoomStatus } from '../types';
 import { formatDate } from '../utils/format';
 import NuevaReservaModal from '../components/reservas/NuevaReservaModal';
 import RoomDetailPanel from '../components/planilla/RoomDetailPanel';
+import { usePageTitle } from '../hooks/usePageTitle';
+
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -122,6 +124,7 @@ function formatDayLabel(d: Date, isToday: boolean, isPast: boolean): string {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function Planilla() {
+    usePageTitle('Planilla');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const todayDate = new Date();

@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import client from '../api/client';
+import { usePageTitle } from '../hooks/usePageTitle';
+
 
 export default function Login() {
+    usePageTitle('Login');
   const navigate = useNavigate();
   const setUser = useAuthStore((s) => s.setUser);
 

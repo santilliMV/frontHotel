@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { usePageTitle } from '../hooks/usePageTitle';
+
+
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -250,6 +253,8 @@ function TypeBadge({ type, notes }: { type: string; notes?: string | null }) {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function Caja() {
+  // dentro del componente, primera línea:
+  usePageTitle('Caja');
   const queryClient = useQueryClient();
   const user = useAuthStore(s => s.user);
   const isAdmin = user?.role === 'ADMIN';

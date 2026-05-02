@@ -7,6 +7,8 @@ import type {
 } from '../api/hotel-api';
 import { COLOMBIA_CITIES, COUNTRIES, DOC_TYPES, DOC_TYPES_SHORT, PAYMENT_METHODS } from '../constants';
 import apiClient from '../api/client';
+import { usePageTitle } from '../hooks/usePageTitle';
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -338,6 +340,8 @@ function PriceBox({ price, loading }: { price: PriceResponse | null; loading: bo
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CheckIn() {
+    usePageTitle('Check-in');
+
   const navigate = useNavigate();
   const location = useLocation();
   const prefill: PrefillData | undefined = (location.state as any)?.prefill;

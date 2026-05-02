@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../api/client'
 import { useAuthStore } from '../store/authStore'
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -776,6 +777,7 @@ type ModalState =
   | null
 
 export default function Vitrina() {
+    usePageTitle('Vitrina');
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'ADMIN'
   const qc = useQueryClient()

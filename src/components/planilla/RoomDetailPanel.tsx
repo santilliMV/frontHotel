@@ -20,6 +20,7 @@ interface RoomByDate {
   reservationNumber?: string;
   reservationId?: string;
   rato?: boolean;
+  overdue?: boolean;
 }
 
 interface ReservationDetail {
@@ -40,6 +41,17 @@ interface ReservationDetail {
   depositPaid: boolean;
   estimatedTotal: number | null;
   companions: { id: string; name: string; documentNumber: string; phone: string | null }[];
+}
+
+interface ServiceCharge {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  addedAt: string;
+  addedBy: string;
+  serviceType: string;
 }
 
 interface TowelInventory {
@@ -65,11 +77,26 @@ function formatDateLong(d: string) {
   });
 }
 
+function formatTime(dt: string) {
+  return new Date(dt).toLocaleString('es-CO', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+}
+
 const OCCUPANT_LABELS: Record<string, string> = {
   INDIVIDUAL: 'Individual',
   PAREJA: 'Pareja',
   MULTIPLE_PERSON: 'Múltiple',
 };
+
+const PAYMENT_METHODS = [
+  { value: 'CASH', label: 'Efectivo' },
+  { value: 'CARD', label: 'Tarjeta' },
+  { value: 'TRANSFER', label: 'Transferencia' },
+  { value: 'QR', label: 'QR' },
+  { value: 'NEQUI_SALOMON', label: 'Nequi Salomón' },
+  { value: 'NEQUI_BRAYAN', label: 'Nequi Brayan' },
+];
 
 // ─── Componente ──────────────────────────────────────────────────────────────
 
@@ -77,7 +104,9 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   const queryClient = useQueryClient();
   const reservationId = room.reservationId;
 
-  const [section, setSection] = useState<'info' | 'toallas' | 'extender' | 'abono' | 'ocupantes'>('info');
+  const [section, setSection] = useState<'info' | 'vitrina' | 'toallas' | 'extender' | 'abono' | 'ocupantes'>(
+    room.rato ? 'toallas' : 'info'
+  );
 
   // Estado toallas
   const [towelQty, setTowelQty] = useState(1);
@@ -91,7 +120,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   // Estado abono
   const [abonoAmount, setAbonoAmount] = useState('');
   const [abonoMethod, setAbonoMethod] = useState('CASH');
-  const [abonoNotes, setAbonoNotes] = useState('');   // ← NUEVO
+  const [abonoNotes, setAbonoNotes] = useState('');
   const [abonoDone, setAbonoDone] = useState(false);
   const [abonoError, setAbonoError] = useState('');
   const [abonoResult, setAbonoResult] = useState<{ totalAbonado: number; saldoPendiente: number } | null>(null);
@@ -108,6 +137,12 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
     towelsToDeliver: number;
   } | null>(null);
 
+  // Estado vitrina/pago consumos
+  const [vitrinaPayAmount, setVitrinaPayAmount] = useState('');
+  const [vitrinaPayMethod, setVitrinaPayMethod] = useState('CASH');
+  const [vitrinaPayDone, setVitrinaPayDone] = useState(false);
+  const [vitrinaPayError, setVitrinaPayError] = useState('');
+
   // ── Queries ────────────────────────────────────────────────────────────────
 
   const { data: reservation, isLoading: loadingRes } = useQuery<ReservationDetail>({
@@ -119,6 +154,12 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   const { data: towels } = useQuery<TowelInventory>({
     queryKey: ['towels-inventory'],
     queryFn: () => apiClient.get('/towels/inventory').then(r => r.data),
+  });
+
+  const { data: serviceCharges = [], isLoading: loadingCharges } = useQuery<ServiceCharge[]>({
+    queryKey: ['service-charges', reservationId],
+    queryFn: () => apiClient.get(`/reservations/${reservationId}/charges`).then(r => r.data),
+    enabled: !!reservationId && section === 'vitrina',
   });
 
   // ── Mutación: entregar toallas extra ──────────────────────────────────────
@@ -178,7 +219,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
       apiClient.post(`/reservations/${reservationId}/abono`, {
         amount: abonoAmount,
         method: abonoMethod,
-        notes: abonoNotes.trim() || null,   // ← NUEVO: enviar notes
+        notes: abonoNotes.trim() || null,
       }).then(r => r.data),
     onSuccess: (data) => {
       setAbonoDone(true);
@@ -192,23 +233,51 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
     },
   });
 
-  // ── Saldo estimado ────────────────────────────────────────────────────────
+  // ── Mutación: pagar consumos de vitrina ───────────────────────────────────
+
+  const vitrinaPayMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post(`/reservations/${reservationId}/charges/pay`, {
+        amount: vitrinaPayAmount,
+        method: vitrinaPayMethod,
+      }).then(r => r.data),
+    onSuccess: () => {
+      setVitrinaPayDone(true);
+      setVitrinaPayError('');
+      queryClient.invalidateQueries({ queryKey: ['service-charges', reservationId] });
+      queryClient.invalidateQueries({ queryKey: ['rooms-by-date'] });
+    },
+    onError: (err: any) => {
+      setVitrinaPayError(err?.response?.data?.error ?? 'Error al registrar el pago');
+    },
+  });
+
+  // ── Cálculos ──────────────────────────────────────────────────────────────
 
   const depositPagado = reservation?.depositAmount ?? 0;
   const totalEstimado = reservation?.estimatedTotal ?? 0;
   const saldoPendiente = Math.max(0, totalEstimado - depositPagado);
 
-  // ── Mínimo fecha extensión ────────────────────────────────────────────────
+  const totalConsumos = serviceCharges.reduce((sum, c) => sum + c.totalPrice, 0);
 
   const minExtendDate = reservation
     ? (() => {
-      const d = new Date(reservation.checkOutDate + 'T12:00:00');
-      d.setDate(d.getDate() + 1);
-      return d.toISOString().split('T')[0];
-    })()
+        const d = new Date(reservation.checkOutDate + 'T12:00:00');
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().split('T')[0];
+      })()
     : '';
 
   // ─────────────────────────────────────────────────────────────────────────
+
+  const TABS = [
+    { key: 'info',      label: 'Info' },
+    { key: 'vitrina',   label: 'Vitrina' },
+    { key: 'toallas',   label: 'Toallas' },
+    { key: 'extender',  label: 'Extender' },
+    { key: 'abono',     label: 'Abono' },
+    { key: 'ocupantes', label: 'Ocupantes' },
+  ] as const;
 
   return (
     <>
@@ -225,11 +294,13 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               <span className="text-lg font-bold text-slate-800">Hab. {room.roomNumber}</span>
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${room.rato
                 ? 'bg-violet-100 text-violet-700 border-violet-200'
-                : room.status === 'OCCUPIED'
-                  ? 'bg-blue-100 text-blue-700 border-blue-200'
-                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                : room.overdue
+                  ? 'bg-orange-100 text-orange-700 border-orange-200'
+                  : room.status === 'OCCUPIED'
+                    ? 'bg-blue-100 text-blue-700 border-blue-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
                 }`}>
-                {room.rato ? 'Rato' : room.statusLabel}
+                {room.rato ? 'Rato' : room.overdue ? 'Vencida' : room.statusLabel}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">{room.roomTypeName} · Piso {room.floor}</p>
@@ -243,22 +314,24 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
         </div>
 
         {/* Tabs */}
-        {reservationId && room.status === 'OCCUPIED' && !room.rato && (
-          <div className="flex border-b border-slate-200">
-            {(['info', 'toallas', 'extender', 'abono', 'ocupantes'] as const).map(tab => (
+        {reservationId && room.status === 'OCCUPIED' && (
+          <div className="flex border-b border-slate-200 overflow-x-auto">
+            {(room.rato ? TABS.filter(t => t.key === 'toallas') : TABS).map(tab => (
               <button
-                key={tab}
-                onClick={() => setSection(tab)}
-                className={`flex-1 py-2.5 text-xs font-medium transition-colors ${section === tab
-                  ? 'text-slate-800 border-b-2 border-slate-800 bg-white'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                  }`}
+                key={tab.key}
+                onClick={() => setSection(tab.key)}
+                className={`flex-shrink-0 px-3 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                  section === tab.key
+                    ? 'text-slate-800 border-b-2 border-slate-800 bg-white'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                {tab === 'info' ? 'Info'
-                  : tab === 'toallas' ? 'Toallas'
-                    : tab === 'extender' ? 'Extender'
-                      : tab === 'abono' ? 'Abono'
-                        : 'Ocupantes'}
+                {tab.label}
+                {tab.key === 'vitrina' && serviceCharges.length > 0 && (
+                  <span className="ml-1 bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded-full font-semibold">
+                    {serviceCharges.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -268,7 +341,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
         <div className="flex-1 overflow-y-auto">
 
           {/* ── Sección: INFO ─────────────────────────────────────────────── */}
-          {(section === 'info' || !reservationId || room.rato) && (
+          {(section === 'info' || !reservationId) && !room.rato && (
             <div className="p-6 space-y-5">
 
               {loadingRes && (
@@ -379,6 +452,140 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 <div className="py-12 text-center">
                   <p className="text-sm text-slate-400">Sin reserva activa en esta habitación.</p>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Sección: VITRINA ─────────────────────────────────────────── */}
+          {section === 'vitrina' && reservation && (
+            <div className="p-6 space-y-5">
+
+              {/* Resumen consumos */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
+                  Consumos anotados a la habitación
+                </p>
+
+                {loadingCharges && (
+                  <p className="text-sm text-slate-400 text-center py-4">Cargando...</p>
+                )}
+
+                {!loadingCharges && serviceCharges.length === 0 && (
+                  <p className="text-sm text-slate-400 text-center py-4">
+                    Sin consumos anotados
+                  </p>
+                )}
+
+                {!loadingCharges && serviceCharges.length > 0 && (
+                  <div className="space-y-2">
+                    {serviceCharges.map(charge => (
+                      <div key={charge.id} className="bg-white rounded-lg px-3 py-2.5 border border-slate-100">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{charge.description}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {charge.quantity} × {fmt(charge.unitPrice)} · {formatTime(charge.addedAt)}
+                            </p>
+                          </div>
+                          <span className="text-sm font-semibold text-slate-800 ml-3 flex-shrink-0">
+                            {fmt(charge.totalPrice)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Total */}
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-3 mt-1">
+                      <span className="text-sm font-semibold text-slate-700">Total consumos</span>
+                      <span className="text-base font-bold text-amber-600">{fmt(totalConsumos)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sección pago */}
+              {serviceCharges.length > 0 && (
+                <>
+                  {vitrinaPayDone ? (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center space-y-1">
+                      <p className="text-sm font-medium text-emerald-700">Pago registrado correctamente</p>
+                      <p className="text-xs text-slate-500">El cobro quedó registrado en caja</p>
+                      <button
+                        onClick={() => {
+                          setVitrinaPayDone(false);
+                          setVitrinaPayAmount('');
+                          queryClient.invalidateQueries({ queryKey: ['service-charges', reservationId] });
+                        }}
+                        className="mt-2 text-xs text-emerald-600 underline"
+                      >
+                        Registrar otro pago
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                        Pagar consumos ahora
+                      </p>
+
+                      {/* Monto */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Monto a cobrar</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                          <input
+                            type="number"
+                            value={vitrinaPayAmount}
+                            onChange={e => { setVitrinaPayAmount(e.target.value); setVitrinaPayError(''); }}
+                            placeholder="0"
+                            min="1"
+                            className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                          />
+                        </div>
+                        {/* Atajo total */}
+                        <button
+                          onClick={() => setVitrinaPayAmount(String(Math.round(totalConsumos)))}
+                          className="mt-1.5 text-xs text-blue-600 hover:underline"
+                        >
+                          Usar total: {fmt(totalConsumos)}
+                        </button>
+                      </div>
+
+                      {/* Método */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Método de pago</label>
+                        <select
+                          value={vitrinaPayMethod}
+                          onChange={e => setVitrinaPayMethod(e.target.value)}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                        >
+                          {PAYMENT_METHODS.map(m => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {vitrinaPayError && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                          <p className="text-sm text-red-600">{vitrinaPayError}</p>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => vitrinaPayMutation.mutate()}
+                        disabled={!vitrinaPayAmount || Number(vitrinaPayAmount) <= 0 || vitrinaPayMutation.isPending}
+                        className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
+                      >
+                        {vitrinaPayMutation.isPending
+                          ? 'Registrando...'
+                          : `Cobrar ${vitrinaPayAmount ? fmt(Number(vitrinaPayAmount)) : '...'}`}
+                      </button>
+
+                      <p className="text-xs text-slate-400 text-center">
+                        Este pago se registra en caja. Los consumos seguirán apareciendo en el checkout para el resumen final.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -536,7 +743,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
           {section === 'abono' && reservation && (
             <div className="p-6 space-y-5">
 
-              {/* Resumen de cuenta */}
               <div className="bg-slate-50 rounded-xl p-4 space-y-2.5">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Estado de cuenta</p>
                 <div className="flex justify-between">
@@ -580,7 +786,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Monto */}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Monto del abono</label>
                     <div className="relative">
@@ -594,23 +799,18 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     </div>
                   </div>
 
-                  {/* Método */}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Método de pago</label>
                     <select
                       value={abonoMethod} onChange={e => setAbonoMethod(e.target.value)}
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                     >
-                      <option value="CASH">Efectivo</option>
-                      <option value="CARD">Tarjeta</option>
-                      <option value="TRANSFER">Transferencia</option>
-                      <option value="QR">QR</option>
-                      <option value="NEQUI_SALOMON">Nequi Salomón</option>
-                      <option value="NEQUI_BRAYAN">Nequi Brayan</option>
+                      {PAYMENT_METHODS.map(m => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
                     </select>
                   </div>
 
-                  {/* Observación — NUEVO */}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">
                       Observación <span className="text-slate-400 font-normal">(opcional)</span>
@@ -624,7 +824,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     />
                   </div>
 
-                  {/* Preview */}
                   {abonoAmount && Number(abonoAmount) > 0 && (
                     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-1.5">
                       <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Resumen</p>
@@ -769,7 +968,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
         </div>
 
         {/* Footer */}
-        {reservation && room.status === 'OCCUPIED' && !room.rato && (
+        {reservation && room.status === 'OCCUPIED' && (
           <div className="border-t border-slate-200 px-6 py-4">
             <button
               onClick={() => onEntregar(reservation.id)}

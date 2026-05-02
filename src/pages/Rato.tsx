@@ -229,7 +229,6 @@ function NuevaEntradaModal({ rooms, onClose, onSaved }: {
             </div>
           </div>
         </div>
-
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-xl">
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium">Cancelar</button>
           <button onClick={handleSubmit} disabled={mutation.isPending || availableRooms.length === 0}

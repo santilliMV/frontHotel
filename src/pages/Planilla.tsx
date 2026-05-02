@@ -10,8 +10,7 @@ import { formatDate } from '../utils/format';
 import NuevaReservaModal from '../components/reservas/NuevaReservaModal';
 import RoomDetailPanel from '../components/planilla/RoomDetailPanel';
 
-// ─── Tipos ───────────────────────────────────────────────────────────────────
-// ─── Tipos ───────────────────────────────────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface RoomByDate {
   id: string;
@@ -26,6 +25,7 @@ interface RoomByDate {
   checkInDate?: string;
   checkOutDate?: string;
   numberOfNights?: number;
+  numberOfGuests?: number;
   reservationNumber?: string;
   reservationId?: string;
   guestHasObservations?: boolean;
@@ -36,6 +36,7 @@ interface RoomByDate {
   preAssignedCheckOut?: string;
   rato?: boolean;
   checkedOut?: boolean;
+  overdue?: boolean;
 }
 
 interface DailyObservation {
@@ -56,11 +57,7 @@ const STATUS_STYLES: Record<RoomStatus, string> = {
   DIRTY: 'bg-amber-100 text-amber-700 border-amber-200',
   MAINTENANCE: 'bg-red-100 text-red-700 border-red-200',
   RESERVED: 'bg-purple-100 text-purple-700 border-purple-200',
-
 };
-// Después de los STATUS_STYLES existentes, agrega esta constante:
-const CHECKED_OUT_STYLE = 'bg-slate-100 text-slate-500 border-slate-200';
-const CHECKED_OUT_ROW = 'bg-slate-50/60';
 
 const STATUS_ROW: Record<RoomStatus, string> = {
   AVAILABLE: '',
@@ -387,7 +384,10 @@ export default function Planilla() {
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-24">Entrada</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-24">Salida</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-14">N.</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600 w-52">Acciones</th>
+              {/* La columna de acciones solo existe si no es historial */}
+              {!isPast && (
+                <th className="text-left px-4 py-3 font-semibold text-slate-600 w-52">Acciones</th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -408,11 +408,10 @@ export default function Planilla() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-slate-400 text-sm">
+                <td colSpan={isPast ? 8 : 9} className="px-4 py-10 text-center text-slate-400 text-sm">
                   {isPast
                     ? 'No hubo actividad en esa fecha.'
                     : 'No hay habitaciones con ese estado para esta fecha.'}
-
                 </td>
               </tr>
             )}
@@ -524,7 +523,8 @@ function RoomRow({
   const isReserved = room.status === 'RESERVED';
   const isDirty = room.status === 'DIRTY';
   const isAvailable = room.status === 'AVAILABLE';
-  const isEntregada = !!room.checkedOut; // ← nueva condición para marcar como entregada
+  const isEntregada = !!room.checkedOut;
+  const isOverdue = !!room.overdue;
 
   const guestName = isOccupied ? room.guestName : (isReserved ? room.preAssignedGuestName : '');
   const checkIn = isOccupied ? room.checkInDate : (isReserved ? room.preAssignedCheckIn : '');
@@ -533,101 +533,200 @@ function RoomRow({
   const resNum = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber : '');
   const reservaId = isOccupied ? room.reservationId : (isReserved ? room.preAssignedReservationId : undefined);
 
-  return (
-    <tr className={`transition-colors ${isEntregada
-      ? 'bg-slate-50/60 opacity-75'
-      : `hover:bg-slate-50 ${STATUS_ROW[room.status]}`
-      }`}>
-      <td className="px-4 py-3 font-semibold text-slate-800">{room.roomNumber}</td>
-      <td className="px-4 py-3 text-slate-600 text-xs">{room.roomTypeName}</td>
-      <td className="px-4 py-3 text-slate-600">{room.floor}</td>
-      <td className="px-4 py-3">
-        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${isEntregada
-          ? 'bg-slate-100 text-slate-400 border-slate-200'
-          : room.rato
-            ? 'bg-violet-100 text-violet-700 border-violet-200'
-            : STATUS_STYLES[room.status]
-          }`}>
-          {isEntregada ? 'Entregada' : room.rato ? 'Rato' : room.statusLabel}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        {guestName && (
-          <span className={`font-medium block ${isEntregada ? 'text-slate-400' : 'text-slate-700'}`}>
-            {guestName}
-          </span>
-        )}
-        {resNum && (
-          <span className={`text-xs ${isEntregada ? 'text-slate-400' : 'text-purple-600'}`}>
-            {resNum}
-          </span>
-        )}
-        {room.guestHasObservations && (
-          <span className="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">obs.</span>
-        )}
-      </td>
-      <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-600'}`}>
-        {checkIn ? formatDate(checkIn) : ''}
-      </td>
-      <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-600'}`}>
-        {checkOut ? formatDate(checkOut) : ''}
-      </td>
-      <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-500'}`}>
-        {nights ?? ''}
-      </td>
+  // ── Lógica aseo ──────────────────────────────────────────────────────────
+  // Día intermedio: hoy > checkInDate AND hoy < checkOutDate
+  const todayStr = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
 
-      {!isPast && (
+  const esIntermedio = isToday && isOccupied && !room.rato && !isEntregada
+    && !!room.checkInDate && !!room.checkOutDate
+    && todayStr > room.checkInDate
+    && todayStr < room.checkOutDate;
+
+  const [aseoState, setAseoState] = useState<'idle' | 'confirming' | 'done'>('idle');
+  const [aseoLoading, setAseoLoading] = useState(false);
+
+  const handleAseoSi = async () => {
+    if (!room.reservationId || !room.id || !room.numberOfGuests) return;
+    setAseoLoading(true);
+    try {
+      await apiClient.post(
+        `/towels/nightly-change?reservationId=${room.reservationId}&roomId=${room.id}&towelsReturned=${room.numberOfGuests}&towelsDelivered=${room.numberOfGuests}&nightNumber=0`
+      );
+      setAseoState('done');
+    } catch {
+      // si falla igual marcamos done para no bloquear la UI
+      setAseoState('done');
+    } finally {
+      setAseoLoading(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Número de columnas: 8 sin acciones (isPast), 9 con acciones
+  const colCount = isPast ? 8 : 9;
+
+  return (
+    <>
+      <tr className={`transition-colors ${isEntregada
+        ? 'bg-slate-50/60 opacity-75'
+        : isOverdue
+          ? 'bg-orange-50/40 hover:bg-orange-50'
+          : `hover:bg-slate-50 ${STATUS_ROW[room.status]}`
+        }`}>
+        <td className="px-4 py-3 font-semibold text-slate-800">{room.roomNumber}</td>
+        <td className="px-4 py-3 text-slate-600 text-xs">{room.roomTypeName}</td>
+        <td className="px-4 py-3 text-slate-600">{room.floor}</td>
         <td className="px-4 py-3">
-          {!isEntregada && (
-            <div className="flex gap-1.5 flex-wrap">
-              {isToday && (isAvailable || isReserved) && (
-                <button
-                  onClick={() => reservaId ? onCheckin(reservaId) : onDirectCheckin()}
-                  className="text-xs text-white bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-1.5"
-                >
-                  Entrada
-                </button>
-              )}
-              {isToday && isOccupied && reservaId && (
-                <button
-                  onClick={() => room.rato ? onVerRato() : onEntregar(reservaId)}
-                  className="text-xs text-white bg-amber-600 hover:bg-amber-500 rounded-lg px-3 py-1.5"
-                >
-                  {room.rato ? 'Ver rato' : 'Entregar'}
-                </button>
-              )}
-              {isToday && isDirty && (
-                <button
-                  onClick={onChangeStatus}
-                  className="text-xs text-slate-600 border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-100"
-                >
-                  Limpia
-                </button>
-              )}
-              {isToday && reservaId && (isReserved || isOccupied) && (
-                <button
-                  onClick={() => onMover(reservaId)}
-                  className="text-xs text-purple-600 border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50"
-                >
-                  Mover
-                </button>
-              )}
-              {/* Botón Ver — siempre visible para habitaciones ocupadas o reservadas */}
-              {(isOccupied || isReserved) && reservaId && (
-                <button
-                  onClick={onVerDetalle}
-                  className="text-xs text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50"
-                >
-                  Ver
-                </button>
-              )}
-            </div>
+          <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${
+            isEntregada
+              ? 'bg-slate-100 text-slate-400 border-slate-200'
+              : isOverdue
+                ? 'bg-orange-100 text-orange-700 border-orange-200'
+                : room.rato
+                  ? 'bg-violet-100 text-violet-700 border-violet-200'
+                  : STATUS_STYLES[room.status]
+            }`}>
+            {isEntregada ? 'Entregada' : isOverdue ? 'Vencida' : room.rato ? 'Rato' : room.statusLabel}
+          </span>
+        </td>
+        <td className="px-4 py-3">
+          {guestName && (
+            <span className={`font-medium block ${isEntregada ? 'text-slate-400' : 'text-slate-700'}`}>
+              {guestName}
+            </span>
           )}
-          {isEntregada && (
-            <span className="text-xs text-slate-400 italic">—</span>
+          {resNum && (
+            <span className={`text-xs ${isEntregada ? 'text-slate-400' : 'text-purple-600'}`}>
+              {resNum}
+            </span>
+          )}
+          {room.guestHasObservations && (
+            <span className="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">obs.</span>
           )}
         </td>
+        <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-600'}`}>
+          {checkIn ? formatDate(checkIn) : ''}
+        </td>
+        <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-600'}`}>
+          {checkOut ? formatDate(checkOut) : ''}
+        </td>
+        <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-500'}`}>
+          {nights ?? ''}
+        </td>
+
+        {!isPast && (
+          <td className="px-4 py-3">
+            {!isEntregada && (
+              <div className="flex gap-1.5 flex-wrap">
+
+                {isToday && (isAvailable || isReserved) && (
+                  <button
+                    onClick={() => reservaId ? onCheckin(reservaId) : onDirectCheckin()}
+                    className="text-xs text-white bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-1.5"
+                  >
+                    Entrada
+                  </button>
+                )}
+
+                {isToday && isOccupied && reservaId && (
+                  <button
+                    onClick={() => room.rato ? onVerRato() : onEntregar(reservaId)}
+                    className={`text-xs text-white rounded-lg px-3 py-1.5 ${
+                      isOverdue
+                        ? 'bg-orange-600 hover:bg-orange-500'
+                        : 'bg-amber-600 hover:bg-amber-500'
+                    }`}
+                  >
+                    {room.rato ? 'Ver rato' : isOverdue ? 'Entregar (vencida)' : 'Entregar'}
+                  </button>
+                )}
+
+                {isToday && isDirty && (
+                  <button
+                    onClick={onChangeStatus}
+                    className="text-xs text-slate-600 border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-100"
+                  >
+                    Limpia
+                  </button>
+                )}
+
+                {isToday && reservaId && (isReserved || isOccupied) && (
+                  <button
+                    onClick={() => onMover(reservaId)}
+                    className="text-xs text-purple-600 border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50"
+                  >
+                    Mover
+                  </button>
+                )}
+
+                {/* Botón Ver */}
+                {(isOccupied || isReserved) && reservaId && (
+                  <button
+                    onClick={onVerDetalle}
+                    className="text-xs text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50"
+                  >
+                    Ver
+                  </button>
+                )}
+
+                {/* Botón Aseo — solo días intermedios */}
+                {esIntermedio && aseoState === 'idle' && (
+                  <button
+                    onClick={() => setAseoState('confirming')}
+                    className="text-xs text-teal-700 border border-teal-200 bg-teal-50 rounded-lg px-3 py-1.5 hover:bg-teal-100"
+                  >
+                    Aseo
+                  </button>
+                )}
+
+                {esIntermedio && aseoState === 'done' && (
+                  <span className="text-xs text-slate-400 italic px-1">Aseo listo</span>
+                )}
+
+              </div>
+            )}
+            {isEntregada && (
+              <span className="text-xs text-slate-400 italic">—</span>
+            )}
+          </td>
+        )}
+      </tr>
+
+      {/* Mini modal de confirmación de aseo — fila extra inline */}
+      {esIntermedio && aseoState === 'confirming' && (
+        <tr className="bg-teal-50/60 border-t border-teal-100">
+          <td colSpan={colCount} className="px-4 py-3">
+            <div className="flex items-center gap-4">
+              <p className="text-sm text-slate-700">
+                <span className="font-medium">Hab. {room.roomNumber}</span> —
+                ¿El huésped aceptó el aseo?
+                {room.numberOfGuests && (
+                  <span className="text-slate-500 ml-1">
+                    (se cambiarán {room.numberOfGuests} toalla{room.numberOfGuests !== 1 ? 's' : ''})
+                  </span>
+                )}
+              </p>
+              <button
+                onClick={handleAseoSi}
+                disabled={aseoLoading}
+                className="text-xs text-white bg-teal-600 hover:bg-teal-500 disabled:bg-teal-300 rounded-lg px-4 py-1.5 font-medium"
+              >
+                {aseoLoading ? 'Registrando...' : 'Sí, hacer aseo'}
+              </button>
+              <button
+                onClick={() => setAseoState('done')}
+                className="text-xs text-slate-600 border border-slate-300 rounded-lg px-4 py-1.5 hover:bg-slate-100"
+              >
+                No, omitir
+              </button>
+            </div>
+          </td>
+        </tr>
       )}
-    </tr>
+    </>
   );
 }

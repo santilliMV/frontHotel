@@ -747,8 +747,18 @@ export default function CheckIn() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
             {roomTypes.map(rt => (
               <div key={rt.id}
-                onClick={() => { setSelectedRoomTypeId(rt.id); setSelectedRoomId(''); setPriceData(null); }}
-                className={`border-2 rounded-xl p-3 cursor-pointer transition-all text-center ${selectedRoomTypeId === rt.id
+                onClick={() => {
+                  setSelectedRoomTypeId(rt.id);
+                  setSelectedRoomId('');
+                  setPriceData(null);
+                  if (rt.id === '00000000-0000-0000-0000-000000000003') {
+                    setOccupantType('MULTIPLE_PERSON');
+                    if (numberOfGuests < 2) setNumberOfGuests(2);
+                  } else if (occupantType === 'MULTIPLE_PERSON') {
+                    setOccupantType('INDIVIDUAL');
+                    setNumberOfGuests(1);
+                  }
+                }} className={`border-2 rounded-xl p-3 cursor-pointer transition-all text-center ${selectedRoomTypeId === rt.id
                   ? 'border-slate-800 bg-slate-50'
                   : 'border-slate-200 hover:border-slate-400'
                   }`}>
@@ -774,8 +784,28 @@ export default function CheckIn() {
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div>
               <label className={fl}>Tipo ocupante</label>
-              <select className={fi} value={occupantType} onChange={e => setOccupantType(e.target.value as typeof occupantType)}>
-                {Object.entries(OCCUPANT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              <select
+                className={fi}
+                value={occupantType}
+                onChange={e => {
+                  const val = e.target.value as typeof occupantType;
+                  setOccupantType(val);
+                  if (val === 'MULTIPLE_PERSON') {
+                    setSelectedRoomTypeId('00000000-0000-0000-0000-000000000003');
+                    setSelectedRoomId('');
+                    setPriceData(null);
+                    if (numberOfGuests < 2) setNumberOfGuests(2);
+                  } else if (selectedRoomTypeId === '00000000-0000-0000-0000-000000000003') {
+                    setSelectedRoomTypeId('');
+                    setSelectedRoomId('');
+                    setPriceData(null);
+                    setNumberOfGuests(val === 'PAREJA' ? 2 : 1);
+                  }
+                }}
+              >
+                {Object.entries(OCCUPANT_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
               </select>
             </div>
             <div>

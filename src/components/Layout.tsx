@@ -19,6 +19,7 @@ const navItems = [
 ];
 
 const adminItems = [
+  { path: '/admin/empleados', label: 'Empleados' },
   { path: '/admin/precios', label: 'Precios' },
   { path: '/admin/cortesias', label: 'Cortesias' },
   { path: '/admin/auditoria', label: 'Auditoria' },
@@ -78,13 +79,8 @@ function AbrirTurnoModal({ username, onSuccess }: {
     try {
       const r = await apiClient.post('/shifts/open', { baseAmount: parseFloat(amount) });
 
-      // Abrir la caja del día con el mismo monto base
-      // Si ya existe (ej: admin la abrió antes), se ignora silenciosamente
-      try {
-        await apiClient.post('/cash/open', { baseAmount: parseFloat(amount) });
-      } catch {
-        // Caja ya abierta o error no crítico — continuar igual
-      }
+      // Abrir/actualizar la caja con el mismo monto — nunca falla
+      await apiClient.post('/cash/open', { baseAmount: parseFloat(amount) });
 
       onSuccess(r.data);
     } catch (e: any) {
@@ -248,8 +244,8 @@ function CerrarTurnoModal({ shift, onSuccess, onCancel }: {
 
         {actualCash !== '' && (
           <div className={`rounded-lg px-4 py-2.5 text-sm mb-3 ${Math.abs(discrepancy) === 0
-              ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-              : 'bg-red-50 border border-red-200 text-red-700'
+            ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+            : 'bg-red-50 border border-red-200 text-red-700'
             }`}>
             {Math.abs(discrepancy) === 0
               ? 'Caja cuadrada'
@@ -363,7 +359,7 @@ export default function Layout() {
       <aside className="w-56 bg-[#1e1e1c] border-r border-[#323230] flex flex-col flex-shrink-0">
 
         <div className="px-5 py-5 border-b border-[#323230]">
-          <h1 className="text-base font-semibold text-white">Hotel Santiago</h1>
+          <h1 className="text-base font-semibold text-white">Hotel Parque Zabal</h1>
           <p className="text-xs text-[#a8a79f] mt-0.5">{user?.fullName}</p>
           <span className="inline-block mt-1 text-xs bg-[#2c2c2a] text-[#a8a79f] px-2 py-0.5 rounded font-medium">
             {isAdmin ? 'Administrador' : 'Recepcionista'}

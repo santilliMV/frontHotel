@@ -13,12 +13,12 @@ import Caja from './pages/Caja';
 import Gastos from './pages/Gastos';
 import Rato from './pages/Rato';
 import Toallas from './pages/Toallas';
-import Vitrina from './pages/Vitrina'
-import Observaciones from './pages/Observaciones'
+import Vitrina from './pages/Vitrina';
+import Observaciones from './pages/Observaciones';
+import Empleados from './pages/Empleados';
 
 const queryClient = new QueryClient();
 
-// Paginas temporales para que no rompa mientras las construimos
 function Placeholder({ title }: { title: string }) {
   return (
     <div className="p-8">
@@ -58,6 +58,7 @@ export default function App() {
             <Route path="admin/precios" element={<Placeholder title="Precios" />} />
             <Route path="admin/cortesias" element={<Placeholder title="Cortesias" />} />
             <Route path="admin/auditoria" element={<Placeholder title="Auditoria" />} />
+            <Route path="admin/empleados" element={<Empleados />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -69,7 +69,7 @@ export default function CheckOut() {
     if (stateReservationId) {
       apiClient.get(`/reservations/${stateReservationId}`).then(r => {
         handleSelectReservation(r.data);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -92,6 +92,16 @@ export default function CheckOut() {
   const [notes, setNotes] = useState('');
 
   const [billing, setBilling] = useState<BillingResponse | null>(null);
+  interface ServiceCharge {
+    id: string;
+    serviceType: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }
+
+  const [serviceCharges, setServiceCharges] = useState<ServiceCharge[]>([]);
   const [payments, setPayments] = useState<PaymentLine[]>([{ method: 'CASH', amount: '' }]);
 
   // ── Búsqueda ──────────────────────────────────────────────────────────────
@@ -144,10 +154,17 @@ export default function CheckOut() {
       const r = await apiClient.post('/checkout', body);
       return r.data as BillingResponse;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setBilling(data);
       setStep('payment');
       setPayments([{ method: 'CASH', amount: String(Math.round(data.balanceDue)) }]);
+      // Cargar desglose de cargos
+      try {
+        const r = await apiClient.get(`/reservations/${reservation!.id}/charges`);
+        setServiceCharges(r.data ?? []);
+      } catch {
+        setServiceCharges([]);
+      }
     },
   });
 
@@ -208,7 +225,7 @@ export default function CheckOut() {
     setSearchInput(''); setSearchQuery(''); setReservation(null);
     setStep('search'); setLateStatus(null); setApplyLate(false);
     setLateCharge(''); setElectronic(false); setInspection('');
-    setDamage(''); setNotes(''); setBilling(null);
+    setDamage(''); setNotes(''); setBilling(null); setServiceCharges([]);
     setPayments([{ method: 'CASH', amount: '' }]);
     previewMutation.reset(); paymentMutation.reset(); confirmMutation.reset();
   };
@@ -442,6 +459,19 @@ export default function CheckOut() {
               {billing.additionalCharges > 0 && (
                 <BillingRow label="Cargos adicionales" value={fmtCOP(billing.additionalCharges)} />
               )}
+
+              {serviceCharges.length > 0
+                ? serviceCharges.map(c => (
+                  <BillingRow
+                    key={c.id}
+                    label={c.quantity > 1 ? `${c.description} × ${c.quantity}` : c.description}
+                    value={fmtCOP(c.totalPrice)}
+                  />
+                ))
+                : billing.additionalCharges > 0 && (
+                  <BillingRow label="Cargos adicionales" value={fmtCOP(billing.additionalCharges)} />
+                )
+              }
               {billing.discounts > 0 && (
                 <BillingRow label="Descuentos" value={`-${fmtCOP(billing.discounts)}`} negative />
               )}
@@ -528,12 +558,7 @@ export default function CheckOut() {
                     <span className="font-semibold text-emerald-700">Sin cambio</span>
                   </div>
                 )}
-                {change > 0 && (
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-blue-700">Cambio a devolver</span>
-                    <span className="font-semibold text-blue-700">{fmtCOP(change)}</span>
-                  </div>
-                )}
+                
               </div>
             </div>
 
@@ -566,9 +591,7 @@ export default function CheckOut() {
               {isProcessing
                 ? 'Procesando salida...'
                 : paymentCoversBalance
-                  ? change > 0
-                    ? `Registrar pago · Devolver ${fmtCOP(change)}`
-                    : 'Registrar pago y confirmar salida →'
+                  ? 'Registrar pago y confirmar salida →'
                   : 'Completa el pago para continuar'}
             </button>
 

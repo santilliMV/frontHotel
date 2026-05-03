@@ -14,6 +14,11 @@ import { usePageTitle } from '../hooks/usePageTitle';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
+interface TowelTx {
+  type: string;
+  reservationNumber: string | null;
+}
+
 interface RoomByDate {
   id: string;
   roomNumber: string;
@@ -112,7 +117,7 @@ function addDays(d: Date, n: number): Date {
   return r;
 }
 
-function formatDayLabel(d: Date, isToday: boolean, isPast: boolean): string {
+function formatDayLabel(d: Date, _isToday: boolean, isPast: boolean): string {
   const ds = toDateStr(d);
   const todayStr = toDateStr(new Date());
   if (ds === todayStr) return 'Hoy — ' + d.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -124,7 +129,7 @@ function formatDayLabel(d: Date, isToday: boolean, isPast: boolean): string {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function Planilla() {
-    usePageTitle('Planilla');
+  usePageTitle('Planilla');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const todayDate = new Date();
@@ -146,6 +151,14 @@ export default function Planilla() {
     queryKey: ['rooms-by-date', dateStr],
     queryFn: () => apiClient.get(`/rooms/by-date?date=${dateStr}`).then(r => r.data),
     refetchInterval: isToday ? 30000 : false,
+  });
+
+  const { data: towelTxsHoy = [] } = useQuery<TowelTx[]>({
+    queryKey: ['towel-transactions-today', todayStr],
+    queryFn: () => apiClient.get(`/towels/transactions/${todayStr}`).then(r => r.data),
+    enabled: isToday,
+    staleTime: 30_000,
+    refetchInterval: isToday ? 60_000 : false,
   });
 
   // ── Query observaciones (solo hoy) ───────────────────────────────────────
@@ -400,6 +413,7 @@ export default function Planilla() {
                 room={room}
                 isToday={isToday}
                 isPast={isPast}
+                towelTxsHoy={towelTxsHoy}           // <-- prop nueva
                 onChangeStatus={() => { setSelectedRoom(room); setShowStatusModal(true); }}
                 onCheckin={(reservaId) => handleCheckin(room, reservaId)}
                 onDirectCheckin={() => navigate('/checkin')}
@@ -508,12 +522,15 @@ export default function Planilla() {
 
 // ─── Fila ─────────────────────────────────────────────────────────────────────
 
+// ─── Fila ─────────────────────────────────────────────────────────────────────
+
 function RoomRow({
-  room, isToday, isPast, onChangeStatus, onCheckin, onDirectCheckin, onMover, onEntregar, onVerRato, onVerDetalle,
+  room, isToday, isPast, towelTxsHoy, onChangeStatus, onCheckin, onDirectCheckin, onMover, onEntregar, onVerRato, onVerDetalle,
 }: {
   room: RoomByDate;
   isToday: boolean;
   isPast: boolean;
+  towelTxsHoy: TowelTx[];
   onChangeStatus: () => void;
   onCheckin: (reservaId: string) => void;
   onDirectCheckin: () => void;
@@ -522,6 +539,8 @@ function RoomRow({
   onVerRato: () => void;
   onVerDetalle: () => void;
 }) {
+  const queryClient = useQueryClient();
+
   const isOccupied = room.status === 'OCCUPIED';
   const isReserved = room.status === 'RESERVED';
   const isDirty = room.status === 'DIRTY';
@@ -537,18 +556,23 @@ function RoomRow({
   const reservaId = isOccupied ? room.reservationId : (isReserved ? room.preAssignedReservationId : undefined);
 
   // ── Lógica aseo ──────────────────────────────────────────────────────────
-  // Día intermedio: hoy > checkInDate AND hoy < checkOutDate
   const todayStr = (() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   })();
 
+  // Día intermedio: hoy está entre checkIn y checkOut
   const esIntermedio = isToday && isOccupied && !room.rato && !isEntregada
     && !!room.checkInDate && !!room.checkOutDate
     && todayStr > room.checkInDate
     && todayStr < room.checkOutDate;
 
-  const [aseoState, setAseoState] = useState<'idle' | 'confirming' | 'done'>('idle');
+  // El aseo ya fue hecho hoy si hay una tx NIGHTLY_CHANGE para el número de reserva de esta habitación
+  const aseoHecho = esIntermedio && towelTxsHoy.some(
+    t => t.type === 'NIGHTLY_CHANGE' && t.reservationNumber === room.reservationNumber
+  );
+
+  const [confirming, setConfirming] = useState(false);
   const [aseoLoading, setAseoLoading] = useState(false);
 
   const handleAseoSi = async () => {
@@ -558,10 +582,11 @@ function RoomRow({
       await apiClient.post(
         `/towels/nightly-change?reservationId=${room.reservationId}&roomId=${room.id}&towelsReturned=${room.numberOfGuests}&towelsDelivered=${room.numberOfGuests}&nightNumber=0`
       );
-      setAseoState('done');
+      queryClient.invalidateQueries({ queryKey: ['towel-transactions-today', todayStr] });
+      queryClient.invalidateQueries({ queryKey: ['towels-inventory'] });
+      setConfirming(false);
     } catch {
-      // si falla igual marcamos done para no bloquear la UI
-      setAseoState('done');
+      setConfirming(false);
     } finally {
       setAseoLoading(false);
     }
@@ -569,7 +594,6 @@ function RoomRow({
 
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Número de columnas: 8 sin acciones (isPast), 9 con acciones
   const colCount = isPast ? 8 : 9;
 
   return (
@@ -584,8 +608,7 @@ function RoomRow({
         <td className="px-4 py-3 text-slate-600 text-xs">{room.roomTypeName}</td>
         <td className="px-4 py-3 text-slate-600">{room.floor}</td>
         <td className="px-4 py-3">
-          <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${
-            isEntregada
+          <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${isEntregada
               ? 'bg-slate-100 text-slate-400 border-slate-200'
               : isOverdue
                 ? 'bg-orange-100 text-orange-700 border-orange-200'
@@ -638,11 +661,10 @@ function RoomRow({
                 {isToday && isOccupied && reservaId && (
                   <button
                     onClick={() => room.rato ? onVerRato() : onEntregar(reservaId)}
-                    className={`text-xs text-white rounded-lg px-3 py-1.5 ${
-                      isOverdue
+                    className={`text-xs text-white rounded-lg px-3 py-1.5 ${isOverdue
                         ? 'bg-orange-600 hover:bg-orange-500'
                         : 'bg-amber-600 hover:bg-amber-500'
-                    }`}
+                      }`}
                   >
                     {room.rato ? 'Ver rato' : isOverdue ? 'Entregar (vencida)' : 'Entregar'}
                   </button>
@@ -666,7 +688,6 @@ function RoomRow({
                   </button>
                 )}
 
-                {/* Botón Ver */}
                 {(isOccupied || isReserved) && reservaId && (
                   <button
                     onClick={onVerDetalle}
@@ -676,18 +697,18 @@ function RoomRow({
                   </button>
                 )}
 
-                {/* Botón Aseo — solo días intermedios */}
-                {esIntermedio && aseoState === 'idle' && (
+                {/* Botón Aseo — solo días intermedios y si no se ha hecho hoy */}
+                {esIntermedio && !aseoHecho && !confirming && (
                   <button
-                    onClick={() => setAseoState('confirming')}
+                    onClick={() => setConfirming(true)}
                     className="text-xs text-teal-700 border border-teal-200 bg-teal-50 rounded-lg px-3 py-1.5 hover:bg-teal-100"
                   >
                     Aseo
                   </button>
                 )}
 
-                {esIntermedio && aseoState === 'done' && (
-                  <span className="text-xs text-slate-400 italic px-1">Aseo listo</span>
+                {esIntermedio && aseoHecho && (
+                  <span className="text-xs text-teal-600 font-medium px-1">Aseo hecho</span>
                 )}
 
               </div>
@@ -699,8 +720,8 @@ function RoomRow({
         )}
       </tr>
 
-      {/* Mini modal de confirmación de aseo — fila extra inline */}
-      {esIntermedio && aseoState === 'confirming' && (
+      {/* Confirmación de aseo — fila inline */}
+      {esIntermedio && confirming && (
         <tr className="bg-teal-50/60 border-t border-teal-100">
           <td colSpan={colCount} className="px-4 py-3">
             <div className="flex items-center gap-4">
@@ -709,7 +730,7 @@ function RoomRow({
                 ¿El huésped aceptó el aseo?
                 {room.numberOfGuests && (
                   <span className="text-slate-500 ml-1">
-                    (se cambiarán {room.numberOfGuests} toalla{room.numberOfGuests !== 1 ? 's' : ''})
+                    (se repondrán {room.numberOfGuests} toalla{room.numberOfGuests !== 1 ? 's' : ''})
                   </span>
                 )}
               </p>
@@ -721,7 +742,7 @@ function RoomRow({
                 {aseoLoading ? 'Registrando...' : 'Sí, hacer aseo'}
               </button>
               <button
-                onClick={() => setAseoState('done')}
+                onClick={() => setConfirming(false)}
                 className="text-xs text-slate-600 border border-slate-300 rounded-lg px-4 py-1.5 hover:bg-slate-100"
               >
                 No, omitir

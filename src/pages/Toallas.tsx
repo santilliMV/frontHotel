@@ -20,7 +20,7 @@ interface TowelInventory {
 
 interface TowelTransaction {
   id: string
-  type: 'DELIVERY' | 'PICKUP_DIRTY' | 'FROM_LAUNDRY' | 'MANUAL_ADJUSTMENT'
+  type: 'DELIVERY' | 'PICKUP_DIRTY' | 'FROM_LAUNDRY' | 'NIGHTLY_CHANGE' | 'MANUAL_ADJUSTMENT'
   quantity: number
   roomNumber: string | null
   reservationNumber: string | null
@@ -53,17 +53,19 @@ const formatDateTime = (iso: string) => {
 
 // ─── Label helpers ────────────────────────────────────────────────────────────
 
-const TYPE_LABEL: Record<TowelTransaction['type'], string> = {
+const TYPE_LABEL: Record<string, string> = {
   DELIVERY: 'Entrega',
   PICKUP_DIRTY: 'Recogida sucias',
   FROM_LAUNDRY: 'Retorno lavandería',
+  NIGHTLY_CHANGE: 'Aseo diario',
   MANUAL_ADJUSTMENT: 'Ajuste manual',
 }
 
-const TYPE_COLOR: Record<TowelTransaction['type'], string> = {
+const TYPE_COLOR: Record<string, string> = {
   DELIVERY: 'bg-blue-50 text-blue-800 border-blue-200',
   PICKUP_DIRTY: 'bg-amber-50 text-amber-800 border-amber-200',
   FROM_LAUNDRY: 'bg-green-50 text-green-800 border-green-200',
+  NIGHTLY_CHANGE: 'bg-teal-50 text-teal-800 border-teal-200',
   MANUAL_ADJUSTMENT: 'bg-slate-100 text-slate-700 border-slate-200',
 }
 
@@ -345,7 +347,7 @@ function ModalAdjust({
 type ModalType = 'init' | 'sendLaundry' | 'returnLaundry' | 'adjust' | null
 
 export default function Toallas() {
-    usePageTitle('Toallas');
+  usePageTitle('Toallas');
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'ADMIN'
   const qc = useQueryClient()
@@ -541,9 +543,8 @@ export default function Toallas() {
                   </td>
                   <td className="px-5 py-3">
                     <span
-                      className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${
-                        TYPE_COLOR[tx.type]
-                      }`}
+                      className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${TYPE_COLOR[tx.type]
+                        }`}
                     >
                       {TYPE_LABEL[tx.type]}
                     </span>

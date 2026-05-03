@@ -415,8 +415,8 @@ function ModalConsume({
                     key={p.id}
                     onClick={() => addToCart(p)}
                     className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${inCart
-                        ? 'border-slate-800 bg-slate-50'
-                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                      ? 'border-slate-800 bg-slate-50'
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                       }`}>
                     <div className="flex items-center justify-between">
                       <div>
@@ -490,8 +490,8 @@ function ModalConsume({
                     <button key={opt.value}
                       onClick={() => { setConsumerType(opt.value); setPasswordVerified(false); setAdminUsername(''); setAdminPassword('') }}
                       className={`py-1.5 text-xs font-medium rounded-lg border transition-colors ${consumerType === opt.value
-                          ? 'bg-slate-800 text-white border-slate-800'
-                          : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                        ? 'bg-slate-800 text-white border-slate-800'
+                        : 'border-slate-300 text-slate-600 hover:bg-slate-50'
                         }`}>
                       {opt.label}
                     </button>
@@ -777,7 +777,7 @@ type ModalState =
   | null
 
 export default function Vitrina() {
-    usePageTitle('Vitrina');
+  usePageTitle('Vitrina');
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'ADMIN'
   const qc = useQueryClient()
@@ -809,15 +809,15 @@ export default function Vitrina() {
   })
 
   // DESPUÉS:
-const occupiedRooms = rooms.filter(r => 
-  r.status === 'OCCUPIED' && 
-  r.reservationId && 
-  r.guestName &&
-  !r.rato &&
-  !r.checkedOut
-)
+  const occupiedRooms = rooms.filter(r =>
+    r.status === 'OCCUPIED' &&
+    r.reservationId &&
+    r.guestName &&
+    !r.rato &&
+    !r.checkedOut
+  )
 
-  const { data: transactions = [], isLoading: loadingTx, refetch: refetchTx } = useQuery<VitrinaTransaction[]>({
+  const { data: transactions = [], isLoading: loadingTx } = useQuery<VitrinaTransaction[]>({
     queryKey: ['vitrina-transactions', historyDate],
     queryFn: () => apiClient.get(`/vitrina/transactions/${historyDate}`).then(r => r.data),
     enabled: showHistory,
@@ -895,8 +895,8 @@ const occupiedRooms = rooms.filter(r =>
             <button key={opt.value}
               onClick={() => setFilterCategory(opt.value)}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${filterCategory === opt.value
-                  ? 'bg-slate-800 text-white border-slate-800'
-                  : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                ? 'bg-slate-800 text-white border-slate-800'
+                : 'border-slate-300 text-slate-600 hover:bg-slate-50'
                 }`}>
               {opt.label}
             </button>

@@ -1,8 +1,11 @@
 import axios from 'axios';
 
+// En desarrollo (npm run dev): usa http://localhost:8080/api
+// En producción (dentro del JAR): usa /api (misma URL, sin dominio)
+const baseURL = import.meta.env.VITE_API_URL ?? '/api';
 
 const client = axios.create({
-  baseURL: 'http://localhost:8080/api',
+  baseURL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -24,8 +27,6 @@ client.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       const stored = localStorage.getItem('hotel_user');
-      // Solo redirigir si había sesión activa (token expirado)
-      // Si no hay sesión, es un login fallido — dejar que el catch del Login maneje el error
       if (stored) {
         localStorage.removeItem('hotel_user');
         window.location.href = '/login';

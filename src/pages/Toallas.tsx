@@ -542,11 +542,12 @@ export default function Toallas() {
                     })}
                   </td>
                   <td className="px-5 py-3">
-                    <span
-                      className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${TYPE_COLOR[tx.type]
-                        }`}
-                    >
-                      {TYPE_LABEL[tx.type]}
+                    <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${TYPE_COLOR[tx.type]}`}>
+                      {tx.type === 'NIGHTLY_CHANGE' && tx.notes
+                        ? tx.notes.startsWith('Entrega')
+                          ? 'Entrega extra'
+                          : 'Aseo diario'
+                        : TYPE_LABEL[tx.type]}
                     </span>
                   </td>
                   <td className="px-5 py-3 text-right font-semibold text-slate-800">

@@ -189,7 +189,7 @@ function SuccessScreen({ result, payments, totalPaid, isCourtesy, onReset }: {
             ['Huésped', result.guestName],
             ['Teléfono', result.guestPhone],
             ['Reserva', result.reservationNumber],
-            ['Toallas', `${result.towelsDelivered}`],
+            ['Toallas entregadas', `${result.towelsDelivered}`],
             ['Hora entrada', new Date(result.checkInDateTime).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })],
             ...(result.isEarlyCheckIn ? [['Early check-in', result.earlyCheckInOption === 'PREVIOUS_NIGHT' ? 'Noche anterior' : 'Noche actual']] : []),
             ...(isCourtesy ? [['Cortesía', 'Autorizada — sin cobro']] : []),

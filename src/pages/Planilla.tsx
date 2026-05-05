@@ -153,6 +153,8 @@ export default function Planilla() {
     refetchInterval: isToday ? 30000 : false,
   });
 
+
+
   const { data: towelTxsHoy = [] } = useQuery<TowelTx[]>({
     queryKey: ['towel-transactions-today', todayStr],
     queryFn: () => apiClient.get(`/towels/transactions/${todayStr}`).then(r => r.data),
@@ -201,14 +203,20 @@ export default function Planilla() {
   // ─────────────────────────────────────────────────────────────────────────
 
   const statusMutation = useMutation({
-    mutationFn: ({ roomId, status }: { roomId: string; status: string }) =>
-      updateRoomStatus(roomId, status),
+    mutationFn: async ({ roomId, status }: { roomId: string; status: string }) => {
+      await updateRoomStatus(roomId, status);
+      if (status === 'AVAILABLE') {
+        await apiClient.post(`/towels/room-clean/${roomId}`);
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms-by-date'] });
+      queryClient.invalidateQueries({ queryKey: ['towels-inventory'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       setShowStatusModal(false);
       setSelectedRoom(null);
     },
+    gcTime: 0, // ← agrega esto
   });
 
   const counts = rooms.reduce<Partial<Record<RoomStatus, number>>>((acc, r) => {
@@ -450,10 +458,13 @@ export default function Planilla() {
             </p>
             <div className="flex gap-3">
               <button
-                onClick={() => statusMutation.mutate({
-                  roomId: selectedRoom.id,
-                  status: selectedRoom.status === 'OCCUPIED' ? 'DIRTY' : 'AVAILABLE',
-                })}
+                onClick={() => {
+                  if (statusMutation.isPending) return;
+                  statusMutation.mutate({
+                    roomId: selectedRoom.id,
+                    status: selectedRoom.status === 'OCCUPIED' ? 'DIRTY' : 'AVAILABLE',
+                  });
+                }}
                 disabled={statusMutation.isPending}
                 className="flex-1 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-400 text-white text-sm font-medium py-2.5 rounded-lg"
               >
@@ -476,8 +487,8 @@ export default function Planilla() {
           onClose={() => setReservaCambio(null)}
           onCreada={() => {
             setReservaCambio(null);
-            queryClient.invalidateQueries({ queryKey: ['rooms-by-date'] });
-            queryClient.invalidateQueries({ queryKey: ['reservations'] });
+            // Forzar refetch inmediato
+            queryClient.resetQueries({ queryKey: ['rooms-by-date'] });
           }}
           reservaExistente={reservaCambio}
         />
@@ -567,6 +578,12 @@ function RoomRow({
     && todayStr > room.checkInDate
     && todayStr < room.checkOutDate;
 
+  const { data: roomTowels } = useQuery<{ currentInRoom: number }>({
+    queryKey: ['room-towels', room.reservationId],
+    queryFn: () => apiClient.get(`/towels/room-towels/${room.reservationId}`).then(r => r.data),
+    enabled: esIntermedio && !!room.reservationId,
+  });
+
   // El aseo ya fue hecho hoy si hay una tx NIGHTLY_CHANGE para el número de reserva de esta habitación
   const aseoHecho = esIntermedio && towelTxsHoy.some(
     t => t.type === 'NIGHTLY_CHANGE' && t.reservationNumber === room.reservationNumber
@@ -576,14 +593,17 @@ function RoomRow({
   const [aseoLoading, setAseoLoading] = useState(false);
 
   const handleAseoSi = async () => {
-    if (!room.reservationId || !room.id || !room.numberOfGuests) return;
+    if (!room.reservationId || !room.id) return;
     setAseoLoading(true);
+    const towelsToReturn = roomTowels?.currentInRoom ?? room.numberOfGuests ?? 1;
+    const towelsToDeliver = room.numberOfGuests ?? 1;
     try {
       await apiClient.post(
-        `/towels/nightly-change?reservationId=${room.reservationId}&roomId=${room.id}&towelsReturned=${room.numberOfGuests}&towelsDelivered=${room.numberOfGuests}&nightNumber=0`
+        `/towels/nightly-change?reservationId=${room.reservationId}&roomId=${room.id}&towelsReturned=${towelsToReturn}&towelsDelivered=${towelsToDeliver}&nightNumber=0`
       );
       queryClient.invalidateQueries({ queryKey: ['towel-transactions-today', todayStr] });
       queryClient.invalidateQueries({ queryKey: ['towels-inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['room-towels', room.reservationId] });
       setConfirming(false);
     } catch {
       setConfirming(false);
@@ -609,12 +629,12 @@ function RoomRow({
         <td className="px-4 py-3 text-slate-600">{room.floor}</td>
         <td className="px-4 py-3">
           <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium border ${isEntregada
-              ? 'bg-slate-100 text-slate-400 border-slate-200'
-              : isOverdue
-                ? 'bg-orange-100 text-orange-700 border-orange-200'
-                : room.rato
-                  ? 'bg-violet-100 text-violet-700 border-violet-200'
-                  : STATUS_STYLES[room.status]
+            ? 'bg-slate-100 text-slate-400 border-slate-200'
+            : isOverdue
+              ? 'bg-orange-100 text-orange-700 border-orange-200'
+              : room.rato
+                ? 'bg-violet-100 text-violet-700 border-violet-200'
+                : STATUS_STYLES[room.status]
             }`}>
             {isEntregada ? 'Entregada' : isOverdue ? 'Vencida' : room.rato ? 'Rato' : room.statusLabel}
           </span>
@@ -662,8 +682,8 @@ function RoomRow({
                   <button
                     onClick={() => room.rato ? onVerRato() : onEntregar(reservaId)}
                     className={`text-xs text-white rounded-lg px-3 py-1.5 ${isOverdue
-                        ? 'bg-orange-600 hover:bg-orange-500'
-                        : 'bg-amber-600 hover:bg-amber-500'
+                      ? 'bg-orange-600 hover:bg-orange-500'
+                      : 'bg-amber-600 hover:bg-amber-500'
                       }`}
                   >
                     {room.rato ? 'Ver rato' : isOverdue ? 'Entregar (vencida)' : 'Entregar'}
@@ -679,7 +699,7 @@ function RoomRow({
                   </button>
                 )}
 
-                {isToday && reservaId && (isReserved || isOccupied) && (
+                {isToday && reservaId && (isReserved || isOccupied) && room.checkOutDate !== todayStr && (
                   <button
                     onClick={() => onMover(reservaId)}
                     className="text-xs text-purple-600 border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50"

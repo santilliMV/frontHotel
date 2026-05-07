@@ -80,6 +80,134 @@ const verifyAdminPassword = async (password: string): Promise<boolean> => {
   }
 };
 
+// ─── RoomOption ───────────────────────────────────────────────────────────────
+
+function RoomOption({ r, selectedRoomId, onSelect }: {
+  r: AvailableRoom;
+  selectedRoomId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div
+      onClick={() => onSelect(r.id)}
+      className={`flex items-center justify-between border-2 rounded-xl px-4 py-3 cursor-pointer transition-all ${selectedRoomId === r.id
+          ? 'border-slate-800 bg-slate-50'
+          : r.status === 'RESERVED'
+            ? 'border-purple-200 hover:border-purple-400'
+            : 'border-slate-200 hover:border-slate-400'
+        }`}
+    >
+      <div>
+        <div className="text-base font-bold text-slate-800">Hab. {r.roomNumber}</div>
+        <div className="text-xs text-slate-400">
+          Piso {r.floor}
+          {r.status === 'RESERVED' && <span className="ml-2 text-purple-600 font-semibold">· Pre-asignada</span>}
+        </div>
+      </div>
+      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${selectedRoomId === r.id ? 'bg-slate-800 border-slate-800 text-white' : 'border-slate-300'
+        }`}>
+        {selectedRoomId === r.id ? '✓' : ''}
+      </div>
+    </div>
+  );
+}
+
+// ─── OtherRoomsForMultiple ────────────────────────────────────────────────────
+
+function OtherRoomsForMultiple({ selectedRoomId, currentRoomTypeId, allRoomTypes, onSelect }: {
+  selectedRoomId: string;
+  currentRoomTypeId: string;
+  allRoomTypes: RoomTypeOption[];
+  onSelect: (roomId: string, roomTypeId: string) => void;
+}) {
+  const [rooms, setRooms] = useState<(AvailableRoom & { roomTypeId: string; roomTypeName: string })[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    const otherTypes = allRoomTypes.filter(rt => rt.id !== currentRoomTypeId);
+    Promise.all(
+      otherTypes.map(rt =>
+        roomsApi.getAvailableByType(rt.id)
+          .then(rooms => rooms.map(r => ({ ...r, roomTypeId: rt.id, roomTypeName: rt.name })))
+          .catch(() => [])
+      )
+    ).then(results => {
+      setRooms(results.flat());
+      setLoading(false);
+    });
+  }, [currentRoomTypeId, allRoomTypes]);
+
+  if (loading) return (
+    <p className="text-slate-400 text-sm py-2 mt-4">Cargando otras habitaciones…</p>
+  );
+
+  if (rooms.length === 0) return null;
+
+  const grouped = allRoomTypes
+    .filter(rt => rt.id !== currentRoomTypeId)
+    .map(rt => ({
+      typeName: rt.name,
+      typeId: rt.id,
+      rooms: rooms.filter(r => r.roomTypeId === rt.id),
+    }))
+    .filter(g => g.rooms.length > 0);
+
+  if (grouped.length === 0) return null;
+
+  return (
+    <div className="mt-5">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="flex-1 h-px bg-slate-200" />
+        <span className="text-xs text-slate-400 font-medium">Otras habitaciones disponibles</span>
+        <div className="flex-1 h-px bg-slate-200" />
+      </div>
+      <p className="text-xs text-slate-400 mb-3">
+        Habitaciones de otros tipos que pueden usarse para múltiples personas.
+      </p>
+      <div className="space-y-4">
+        {grouped.map(group => (
+          <div key={group.typeId}>
+            <p className="text-xs font-semibold text-slate-500 mb-2">{group.typeName}</p>
+            <div className="space-y-2">
+              {group.rooms.map(r => (
+                <RoomOption
+                  key={r.id}
+                  r={r}
+                  selectedRoomId={selectedRoomId}
+                  onSelect={(roomId) => onSelect(roomId, group.typeId)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── PriceBox ─────────────────────────────────────────────────────────────────
+
+function PriceBox({ price, loading }: { price: PriceResponse | null; loading: boolean }) {
+  if (loading) return (
+    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-4 text-sm text-slate-500">
+      <span className="animate-spin inline-block">⟳</span> Calculando precio…
+    </div>
+  );
+  if (!price) return null;
+  return (
+    <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4">
+      <div>
+        <div className="text-2xl font-black text-slate-800 tracking-tight">{fmtCOP(price.totalPrice)}</div>
+        <div className="text-xs text-slate-500 mt-0.5">
+          {price.numberOfNights} noche{price.numberOfNights !== 1 ? 's' : ''} · {OCCUPANT_LABELS[price.occupantType] ?? price.occupantType}
+          {price.numberOfGuests > 1 ? ` · ${price.numberOfGuests} personas` : ''}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── AdminPasswordModal ───────────────────────────────────────────────────────
 
 function AdminPasswordModal({ title, description, onConfirm, onCancel }: {
@@ -315,32 +443,56 @@ function CreateGuestModal({ onCreated, onCancel }: {
   );
 }
 
-// ─── PriceBox ─────────────────────────────────────────────────────────────────
+// ─── AdminPasswordInline ──────────────────────────────────────────────────────
 
-function PriceBox({ price, loading }: { price: PriceResponse | null; loading: boolean }) {
-  if (loading) return (
-    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-4 text-sm text-slate-500">
-      <span className="animate-spin inline-block">⟳</span> Calculando precio…
-    </div>
-  );
-  if (!price) return null;
+function AdminPasswordInline({ onConfirm, onCancel }: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!password) { setError('Ingresa la clave'); return; }
+    setLoading(true); setError('');
+    const valid = await verifyAdminPassword(password);
+    setLoading(false);
+    if (!valid) { setError('Clave incorrecta'); return; }
+    onConfirm();
+  };
+
+  const fi = "w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400";
+
   return (
-    <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4">
-      <div>
-        <div className="text-2xl font-black text-slate-800 tracking-tight">{fmtCOP(price.totalPrice)}</div>
-        <div className="text-xs text-slate-500 mt-0.5">
-          {price.numberOfNights} noche{price.numberOfNights !== 1 ? 's' : ''} · {OCCUPANT_LABELS[price.occupantType] ?? price.occupantType}
-          {price.numberOfGuests > 1 ? ` · ${price.numberOfGuests} personas` : ''}
-        </div>
+    <>
+      <input
+        type="password"
+        autoFocus
+        className={`${fi} mb-3`}
+        placeholder="••••••••"
+        value={password}
+        onChange={e => setPassword(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+      />
+      {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+      <div className="flex gap-3">
+        <button onClick={onCancel} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+          Cancelar
+        </button>
+        <button onClick={handleSubmit} disabled={loading}
+          className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg">
+          {loading ? '⟳' : 'Confirmar'}
+        </button>
       </div>
-    </div>
+    </>
   );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CheckIn() {
-    usePageTitle('Check-in');
+  usePageTitle('Check-in');
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -363,6 +515,7 @@ export default function CheckIn() {
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [selectedRoomTypeId, setSelectedRoomTypeId] = useState(prefill?.roomTypeId ?? '');
   const [selectedRoomId, setSelectedRoomId] = useState(prefill?.roomId ?? '');
+  const [overrideRoomTypeId, setOverrideRoomTypeId] = useState<string | null>(null);
   const [checkInDate, setCheckInDate] = useState(prefill?.checkInDate ?? today());
   const [checkOutDate, setCheckOutDate] = useState(prefill?.checkOutDate ?? tomorrow());
   const [numberOfGuests, setNumberOfGuests] = useState(prefill?.numberOfGuests ?? 1);
@@ -399,7 +552,6 @@ export default function CheckIn() {
   const [result, setResult] = useState<CheckInResponse | null>(null);
   const prefillRoomIdRef = useRef<string | undefined>(prefill?.roomId);
 
-
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { roomsApi.getTypes().then(setRoomTypes).catch(() => { }); }, []);
@@ -421,16 +573,19 @@ export default function CheckIn() {
       .finally(() => setRoomsLoading(false));
   }, [selectedRoomTypeId, fromPlanilla]);
 
-  // Calcular precio con ajuste early check-in
+  // Calcular precio — usa overrideRoomTypeId si existe (habitación de otro tipo para múltiple)
   useEffect(() => {
-    if (!selectedRoomTypeId || !checkInDate || !checkOutDate || nightCount(checkInDate, checkOutDate) <= 0) { setPriceData(null); return; }
+    const effectiveRoomTypeId = overrideRoomTypeId ?? selectedRoomTypeId;
+    if (!effectiveRoomTypeId || !checkInDate || !checkOutDate || nightCount(checkInDate, checkOutDate) <= 0) {
+      setPriceData(null); return;
+    }
     if (priceDebounceRef.current) clearTimeout(priceDebounceRef.current);
     priceDebounceRef.current = setTimeout(async () => {
       setPriceLoading(true);
       try {
         const currentHour = new Date().getHours();
         setPriceData(await roomsApi.getPrice({
-          roomTypeId: selectedRoomTypeId,
+          roomTypeId: effectiveRoomTypeId,
           occupantType,
           checkIn: checkInDate,
           checkOut: checkOutDate,
@@ -441,7 +596,7 @@ export default function CheckIn() {
       catch { setPriceData(null); }
       finally { setPriceLoading(false); }
     }, 600);
-  }, [selectedRoomTypeId, occupantType, checkInDate, checkOutDate, numberOfGuests]);
+  }, [selectedRoomTypeId, overrideRoomTypeId, occupantType, checkInDate, checkOutDate, numberOfGuests]);
 
   useEffect(() => {
     setTowels(Math.max(0, numberOfGuests - 1));
@@ -505,9 +660,11 @@ export default function CheckIn() {
     if (!selectedGuest || !selectedRoomTypeId || !selectedRoomId) return;
     setSubmitting(true); setSubmitError('');
 
+    const effectiveRoomTypeId = overrideRoomTypeId ?? selectedRoomTypeId;
+
     const validationError = validateReservationPayload({
       firstName: selectedGuest.firstName, phone: selectedGuest.phone,
-      roomTypeId: selectedRoomTypeId, checkInDate, checkOutDate, numberOfGuests, occupantType,
+      roomTypeId: effectiveRoomTypeId, checkInDate, checkOutDate, numberOfGuests, occupantType,
     });
     if (validationError) { setSubmitError(validationError); setSubmitting(false); return; }
 
@@ -528,7 +685,7 @@ export default function CheckIn() {
           firstName: selectedGuest.firstName,
           lastName: selectedGuest.lastName ?? undefined,
           phone: selectedGuest.phone,
-          roomTypeId: selectedRoomTypeId,
+          roomTypeId: effectiveRoomTypeId,
           roomId: selectedRoomId,
           checkInDate,
           checkOutDate,
@@ -572,6 +729,7 @@ export default function CheckIn() {
   const handleReset = () => {
     setStep('guest'); setSelectedGuest(null); setGuestQuery(''); setGuestResults([]);
     setSelectedRoomTypeId(''); setSelectedRoomId(''); setFilteredRooms([]);
+    setOverrideRoomTypeId(null);
     setCheckInDate(today()); setCheckOutDate(tomorrow());
     setNumberOfGuests(1); setOccupantType('INDIVIDUAL'); setTowels(1);
     setCompanions([]); setPayments([{ method: 'CASH', amount: '' }]);
@@ -585,11 +743,11 @@ export default function CheckIn() {
   const currentIdx = STEPS.findIndex(s => s.key === step);
   const canAdvGuest = !!selectedGuest;
   const canAdvRoom = !!selectedRoomTypeId && !!selectedRoomId && nights > 0;
-  const roomTypeName = roomTypes.find(r => r.id === selectedRoomTypeId)?.name ?? '';
+  const effectiveRoomTypeId = overrideRoomTypeId ?? selectedRoomTypeId;
+  const roomTypeName = roomTypes.find(r => r.id === effectiveRoomTypeId)?.name ?? '';
   const roomNumber = filteredRooms.find(r => r.id === selectedRoomId)?.roomNumber ?? '';
   const hasPrefill = !!prefill?.roomTypeId;
 
-  // Opciones de número de personas según occupantType
   const guestOptions = occupantType === 'INDIVIDUAL' ? [1]
     : occupantType === 'PAREJA' ? [2]
       : [2, 3, 4, 5, 6];
@@ -754,6 +912,7 @@ export default function CheckIn() {
                 onClick={() => {
                   setSelectedRoomTypeId(rt.id);
                   setSelectedRoomId('');
+                  setOverrideRoomTypeId(null);
                   setPriceData(null);
                   if (rt.id === '00000000-0000-0000-0000-000000000003') {
                     setOccupantType('MULTIPLE_PERSON');
@@ -794,6 +953,7 @@ export default function CheckIn() {
                 onChange={e => {
                   const val = e.target.value as typeof occupantType;
                   setOccupantType(val);
+                  setOverrideRoomTypeId(null);
                   if (val === 'MULTIPLE_PERSON') {
                     setSelectedRoomTypeId('00000000-0000-0000-0000-000000000003');
                     setSelectedRoomId('');
@@ -838,37 +998,42 @@ export default function CheckIn() {
 
           {selectedRoomTypeId && (
             <>
-              <label className={`${fl} mb-2`}>Habitaciones disponibles — {roomTypeName}</label>
+              <label className={`${fl} mb-2`}>
+                Habitaciones disponibles — {roomTypes.find(r => r.id === selectedRoomTypeId)?.name ?? ''}
+              </label>
               {roomsLoading ? (
                 <p className="text-slate-400 text-sm py-2">Cargando habitaciones…</p>
               ) : filteredRooms.length === 0 ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-amber-700 text-sm">
-                  No hay habitaciones disponibles del tipo {roomTypeName}.
+                  No hay habitaciones disponibles del tipo seleccionado.
                 </div>
               ) : (
                 <div className="space-y-2">
                   {filteredRooms.map(r => (
-                    <div key={r.id}
-                      onClick={() => setSelectedRoomId(r.id)}
-                      className={`flex items-center justify-between border-2 rounded-xl px-4 py-3 cursor-pointer transition-all ${selectedRoomId === r.id
-                        ? 'border-slate-800 bg-slate-50'
-                        : r.status === 'RESERVED'
-                          ? 'border-purple-200 hover:border-purple-400'
-                          : 'border-slate-200 hover:border-slate-400'
-                        }`}>
-                      <div>
-                        <div className="text-base font-bold text-slate-800">Hab. {r.roomNumber}</div>
-                        <div className="text-xs text-slate-400">
-                          Piso {r.floor}
-                          {r.status === 'RESERVED' && <span className="ml-2 text-purple-600 font-semibold">· Pre-asignada</span>}
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${selectedRoomId === r.id ? 'bg-slate-800 border-slate-800 text-white' : 'border-slate-300'}`}>
-                        {selectedRoomId === r.id ? '✓' : ''}
-                      </div>
-                    </div>
+                    <RoomOption
+                      key={r.id}
+                      r={r}
+                      selectedRoomId={selectedRoomId}
+                      onSelect={(id) => {
+                        setSelectedRoomId(id);
+                        setOverrideRoomTypeId(null);
+                      }}
+                    />
                   ))}
                 </div>
+              )}
+
+              {/* Otras habitaciones disponibles — solo para MULTIPLE_PERSON */}
+              {occupantType === 'MULTIPLE_PERSON' && (
+                <OtherRoomsForMultiple
+                  selectedRoomId={selectedRoomId}
+                  currentRoomTypeId={selectedRoomTypeId}
+                  allRoomTypes={roomTypes}
+                  onSelect={(roomId, roomTypeId) => {
+                    setSelectedRoomId(roomId);
+                    setOverrideRoomTypeId(roomTypeId);
+                  }}
+                />
               )}
             </>
           )}
@@ -936,7 +1101,6 @@ export default function CheckIn() {
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">4. Pago y ajustes</p>
 
-          {/* Precio base */}
           {priceData && !isCourtesy && (
             <div className="flex justify-between items-center bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4">
               <div>
@@ -1145,7 +1309,7 @@ export default function CheckIn() {
                 ['Salida', new Date(checkOutDate + 'T12:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })],
                 ['Noches', String(nights)],
                 ['Personas', `${numberOfGuests} · ${OCCUPANT_LABELS[occupantType]}`],
-                ['Toallas', `${towels}`],
+                ['Toallas a entregar', `${towels}`],
               ]
             },
           ].map(section => (
@@ -1302,52 +1466,5 @@ export default function CheckIn() {
         />
       )}
     </div>
-  );
-}
-
-// ─── AdminPasswordInline ──────────────────────────────────────────────────────
-// Versión inline para usar dentro de un modal existente
-
-function AdminPasswordInline({ onConfirm, onCancel }: {
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!password) { setError('Ingresa la clave'); return; }
-    setLoading(true); setError('');
-    const valid = await verifyAdminPassword(password);
-    setLoading(false);
-    if (!valid) { setError('Clave incorrecta'); return; }
-    onConfirm();
-  };
-
-  const fi = "w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400";
-
-  return (
-    <>
-      <input
-        type="password"
-        autoFocus
-        className={`${fi} mb-3`}
-        placeholder="••••••••"
-        value={password}
-        onChange={e => setPassword(e.target.value)}
-        onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-      />
-      {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
-      <div className="flex gap-3">
-        <button onClick={onCancel} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
-          Cancelar
-        </button>
-        <button onClick={handleSubmit} disabled={loading}
-          className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg">
-          {loading ? '⟳' : 'Confirmar'}
-        </button>
-      </div>
-    </>
   );
 }

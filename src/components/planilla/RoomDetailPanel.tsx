@@ -676,13 +676,21 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-slate-500">En la habitación ahora</span>
                     <span className="text-2xl font-bold text-slate-800">
-                      {roomTowels?.currentInRoom ?? '—'}
+                      {roomTowels
+                        ? (room.rato
+                          ? Math.max(1, roomTowels.currentInRoom)
+                          : roomTowels.currentInRoom)
+                        : '—'}
                     </span>
                   </div>
                   <div className="border-t border-slate-200 pt-2.5 space-y-1.5">
                     <div className="flex justify-between">
                       <span className="text-xs text-slate-400">Total entregadas</span>
-                      <span className="text-xs text-slate-600">{roomTowels?.totalDelivered ?? '—'}</span>
+                      <span className="text-xs text-slate-600">
+                        {roomTowels
+                          ? (room.rato ? Math.max(1, roomTowels.totalDelivered) : roomTowels.totalDelivered)
+                          : '—'}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-xs text-slate-400">Total recogidas sucias</span>
@@ -770,8 +778,8 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 <button
                   onClick={() => { setExtenderTipo('EXTENDER'); setNewCheckOut(''); setExtendError(''); setExtendDone(false); }}
                   className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${extenderTipo === 'EXTENDER'
-                      ? 'border-slate-700 bg-slate-700 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    ? 'border-slate-700 bg-slate-700 text-white'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                 >
                   Extender
@@ -779,8 +787,8 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 <button
                   onClick={() => { setExtenderTipo('ACORTAR'); setNewCheckOut(''); setExtendError(''); setExtendDone(false); }}
                   className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${extenderTipo === 'ACORTAR'
-                      ? 'border-amber-600 bg-amber-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    ? 'border-amber-600 bg-amber-600 text-white'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                 >
                   Acortar

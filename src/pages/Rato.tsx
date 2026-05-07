@@ -379,6 +379,14 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
 
 // ── Modal: Convertir a noche ──────────────────────────────────────────────────
 
+// ── Modal: Convertir a noche ──────────────────────────────────────────────────
+
+interface NightPreview {
+  nightPrice: number;
+  alreadyPaid: number;
+  extensionCharge: number;
+}
+
 function ConvertToNightModal({ rato, onClose, onSaved }: {
   rato: RatoResponse; onClose: () => void; onSaved: () => void;
 }) {
@@ -391,6 +399,8 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
   const [checkOutDate, setCheckOutDate] = useState(tomorrowStr());
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [error, setError] = useState('');
+  const [preview, setPreview] = useState<NightPreview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   const mutation = useMutation({
     mutationFn: postConvert,
@@ -398,11 +408,29 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
     onError: (e: unknown) => setError(getErrorMsg(e)),
   });
 
-  const handleNext = () => {
+  // Cada vez que cambia occupantType en paso 1, pre-carga el precio
+  useEffect(() => {
+    setPreview(null);
+  }, [occupantType]);
+
+  const handleNext = async () => {
     setError('');
     if (!firstName.trim()) { setError('El nombre es obligatorio.'); return; }
     if (!phone.trim()) { setError('El teléfono es obligatorio.'); return; }
-    setStep(2);
+
+    // Consultar precio real antes de pasar al paso 2
+    setLoadingPreview(true);
+    try {
+      const res = await apiClient.get('/rato/preview-night-price', {
+        params: { ratoServiceId: rato.id, occupantType },
+      });
+      setPreview(res.data);
+      setStep(2);
+    } catch {
+      setError('No se pudo calcular el precio de la noche. Verifica la configuración de precios.');
+    } finally {
+      setLoadingPreview(false);
+    }
   };
 
   const handleSubmit = () => {
@@ -434,8 +462,9 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
         <div className="flex items-center gap-2 px-6 pt-4">
           {([1, 2] as const).map(s => (
             <div key={s} className="flex items-center gap-2">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${step === s ? 'bg-slate-800 text-white' : step > s ? 'bg-slate-400 text-white' : 'bg-slate-100 text-slate-400'
-                }`}>{s}</div>
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
+                step === s ? 'bg-slate-800 text-white' : step > s ? 'bg-slate-400 text-white' : 'bg-slate-100 text-slate-400'
+              }`}>{s}</div>
               <span className={`text-xs ${step === s ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>
                 {s === 1 ? 'Datos del huésped' : 'Reserva y pago'}
               </span>
@@ -477,8 +506,9 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
                 <div className="flex gap-2">
                   {(['INDIVIDUAL', 'PAREJA', 'MULTIPLE_PERSON'] as OccupantType[]).map(t => (
                     <button key={t} onClick={() => setOccupantType(t)}
-                      className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${occupantType === t ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:border-slate-400'
-                        }`}>
+                      className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${
+                        occupantType === t ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:border-slate-400'
+                      }`}>
                       {OCCUPANT_LABELS[t]}
                     </button>
                   ))}
@@ -509,14 +539,11 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
                 <PaymentMethodGrid value={paymentMethod} onChange={setPaymentMethod} />
               </div>
 
+              {/* Resumen con precios reales */}
               <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Huésped</span>
                   <span className="font-medium text-slate-800">{firstName} {lastName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Teléfono</span>
-                  <span className="text-slate-700">{phone}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Ocupante</span>
@@ -526,15 +553,27 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
                   <span className="text-slate-500">Salida</span>
                   <span className="text-slate-700">{new Date(checkOutDate + 'T12:00:00').toLocaleDateString('es-CO')}</span>
                 </div>
-                <div className="border-t border-slate-200 pt-1.5 flex justify-between">
-                  <span className="text-slate-500">Ya pagó (rato)</span>
-                  <span className="text-slate-700">{formatCOP(rato.basePriceRato)}</span>
-                </div>
-                <div className="flex justify-between font-medium">
-                  <span className="text-slate-600">Cobra diferencia</span>
-                  <span className="text-slate-800">precio noche − {formatCOP(rato.basePriceRato)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-400">
+
+                {preview && (
+                  <>
+                    <div className="border-t border-slate-200 pt-1.5 flex justify-between">
+                      <span className="text-slate-500">Precio noche completa</span>
+                      <span className="text-slate-700">{formatCOP(preview.nightPrice)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Ya pagó (rato)</span>
+                      <span className="text-slate-700">− {formatCOP(preview.alreadyPaid)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold border-t border-slate-200 pt-1.5">
+                      <span className="text-slate-700">Cobra ahora</span>
+                      <span className={preview.extensionCharge > 0 ? 'text-slate-900' : 'text-green-700'}>
+                        {preview.extensionCharge > 0 ? formatCOP(preview.extensionCharge) : 'Sin cobro adicional'}
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                <div className="flex justify-between text-xs text-slate-400 pt-1">
                   <span>Método</span>
                   <span>{PAYMENT_METHODS.find(m => m.value === paymentMethod)?.label}</span>
                 </div>
@@ -544,14 +583,14 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
         </div>
 
         <div className="flex justify-between gap-2 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-xl">
-          <button onClick={step === 1 ? onClose : () => { setStep(1); setError(''); }}
+          <button onClick={step === 1 ? onClose : () => { setStep(1); setError(''); setPreview(null); }}
             className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium">
             {step === 1 ? 'Cancelar' : 'Atrás'}
           </button>
           {step === 1 ? (
-            <button onClick={handleNext}
-              className="px-5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors">
-              Siguiente
+            <button onClick={handleNext} disabled={loadingPreview}
+              className="px-5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors">
+              {loadingPreview ? 'Calculando precio...' : 'Siguiente'}
             </button>
           ) : (
             <button onClick={handleSubmit} disabled={mutation.isPending}

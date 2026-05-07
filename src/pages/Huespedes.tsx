@@ -332,12 +332,10 @@ function GuestCard({ guest, onEdit, onHistory }: {
   const initials = (guest.firstName[0] + (guest.lastName?.[0] ?? '')).toUpperCase();
 
   return (
-    <div className={`bg-white rounded-xl border px-4 py-3.5 flex items-start gap-4 transition-colors hover:border-slate-300 ${
-      guest.hasObservations ? 'border-red-200 bg-red-50/30' : 'border-slate-200'
-    }`}>
-      <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${
-        guest.hasObservations ? 'bg-red-700' : 'bg-slate-800'
+    <div className={`bg-white rounded-xl border px-4 py-3.5 flex items-start gap-4 transition-colors hover:border-slate-300 ${guest.hasObservations ? 'border-red-200 bg-red-50/30' : 'border-slate-200'
       }`}>
+      <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${guest.hasObservations ? 'bg-red-700' : 'bg-slate-800'
+        }`}>
         {initials}
       </div>
 
@@ -399,16 +397,16 @@ function GuestCard({ guest, onEdit, onHistory }: {
 type Modal = 'none' | 'create' | 'edit';
 
 export default function Huespedes() {
-    usePageTitle('Huespedes');
+  usePageTitle('Huespedes');
 
-  const [query, setQuery]       = useState('');
-  const [guests, setGuests]     = useState<GuestResponse[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [modal, setModal]       = useState<Modal>('none');
-  const [editing, setEditing]   = useState<GuestResponse | null>(null);
-  const [saving, setSaving]     = useState(false);
+  const [query, setQuery] = useState('');
+  const [guests, setGuests] = useState<GuestResponse[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState<Modal>('none');
+  const [editing, setEditing] = useState<GuestResponse | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-  const [toast, setToast]       = useState('');
+  const [toast, setToast] = useState('');
   const [historyGuest, setHistoryGuest] = useState<GuestResponse | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -426,7 +424,8 @@ export default function Huespedes() {
     if (!query.trim()) { loadAll(); return; }
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
-      try { setGuests(await guestsApi.search(query.trim())); }
+      const normalizedQuery = query.trim().replace(/\s+/g, ' ');
+      try { setGuests(await guestsApi.search(normalizedQuery)); }
       catch { setGuests([]); }
       finally { setLoading(false); }
     }, 350);
@@ -482,7 +481,7 @@ export default function Huespedes() {
   };
 
   const withObs = guests.filter((g) => g.hasObservations);
-  const normal  = guests.filter((g) => !g.hasObservations);
+  const normal = guests.filter((g) => !g.hasObservations);
 
   return (
     <div className="min-h-screen bg-slate-50">

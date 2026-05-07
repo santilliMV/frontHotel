@@ -128,6 +128,7 @@ export default function CheckOut() {
   });
 
   // ── Seleccionar reserva ───────────────────────────────────────────────────
+  const [pendingCharges, setPendingCharges] = useState<ServiceCharge[]>([]);
 
   const handleSelectReservation = async (res: ReservationResponse) => {
     setReservation(res);
@@ -138,6 +139,13 @@ export default function CheckOut() {
       if (r.data.isLate) setApplyLate(true);
     } catch {
       setLateStatus(null);
+    }
+    // Cargar cargos pendientes de vitrina
+    try {
+      const r = await apiClient.get(`/reservations/${res.id}/charges`);
+      setPendingCharges(r.data ?? []);
+    } catch {
+      setPendingCharges([]);
     }
   };
 
@@ -175,20 +183,22 @@ export default function CheckOut() {
 
   const paymentMutation = useMutation({
     mutationFn: async () => {
-      const validPayments = payments.filter(p => p.amount && parseFloat(p.amount) > 0);
-      for (const p of validPayments) {
-        await apiClient.post('/billing/payment', {
-          billingId: billing!.billingId,
-          amount: parseFloat(p.amount),
-          method: p.method,
-        });
+      // Si el saldo ya es 0, no hay nada que registrar
+      if (balanceDue > 0) {
+        const validPayments = payments.filter(p => p.amount && parseFloat(p.amount) > 0);
+        for (const p of validPayments) {
+          await apiClient.post('/billing/payment', {
+            billingId: billing!.billingId,
+            amount: parseFloat(p.amount),
+            method: p.method,
+          });
+        }
       }
       const r = await apiClient.get(`/billing/${billing!.billingId}`);
       return r.data as BillingResponse;
     },
     onSuccess: (data) => {
       setBilling(data);
-      // Después de pagar, confirmar la salida
       confirmMutation.mutate();
     },
   });
@@ -210,7 +220,7 @@ export default function CheckOut() {
   const balanceDue = billing?.balanceDue ?? 0;
   const pendingBalance = Math.max(0, balanceDue - totalPaid);
   const change = Math.max(0, totalPaid - balanceDue);
-  const paymentCoversBalance = totalPaid >= balanceDue && totalPaid > 0;
+  const paymentCoversBalance = balanceDue <= 0 || (totalPaid >= balanceDue && totalPaid > 0);
 
   const handleAddPayment = () => setPayments(prev => [...prev, { method: 'CASH', amount: '' }]);
   const handleRemovePayment = (i: number) => setPayments(prev => prev.filter((_, idx) => idx !== i));
@@ -355,6 +365,42 @@ export default function CheckOut() {
               {reservation.depositAmount && reservation.depositAmount > 0 && (
                 <InfoRow label="Abono pagado" value={fmtCOP(reservation.depositAmount)} />
               )}
+              {reservation.estimatedTotal && (() => {
+                const vitrineTotal = pendingCharges
+                  .filter(c => c.serviceType === 'VITRINA')
+                  .reduce((sum, c) => sum + c.totalPrice, 0);
+                const depositado = reservation.depositAmount ?? 0;
+                const extraTotal = pendingCharges
+                  .filter(c => c.serviceType === 'EXTRA')
+                  .reduce((sum, c) => sum + c.totalPrice, 0);
+                const totalReal = reservation.estimatedTotal + vitrineTotal + extraTotal;
+                const saldo = totalReal - depositado;
+
+
+                if (vitrineTotal > 0) {
+                  return (
+                    <>
+
+
+                      {vitrineTotal > 0 && (
+                        <InfoRow label="Vitrina pendiente" value={fmtCOP(vitrineTotal)} />
+                      )}
+                      {extraTotal > 0 && (
+                        <InfoRow label="Cobro extra pendiente" value={fmtCOP(extraTotal)} />
+                      )}
+                      <InfoRow label="Total pendiente" value={fmtCOP(saldo)} />
+                    </>
+                  );
+                }
+
+
+                const saldoBase = reservation.estimatedTotal - depositado;
+                return saldoBase > 0
+                  ? <InfoRow label="Saldo por cobrar" value={fmtCOP(saldoBase)} />
+                  : saldoBase < 0
+                    ? <InfoRow label="A favor del huésped" value={fmtCOP(Math.abs(saldoBase))} />
+                    : <InfoRow label="Saldo por cobrar" value="Pagado completo" />;
+              })()}
             </div>
             {reservation.guestHasObservations && (
               <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
@@ -459,22 +505,22 @@ export default function CheckOut() {
             </div>
             <div className="space-y-2 text-sm">
               <BillingRow label="Base (noches)" value={fmtCOP(billing.basePrice)} />
-              {billing.additionalCharges > 0 && (
-                <BillingRow label="Cargos adicionales" value={fmtCOP(billing.additionalCharges)} />
-              )}
 
-              {serviceCharges.length > 0
-                ? serviceCharges.map(c => (
-                  <BillingRow
-                    key={c.id}
-                    label={c.quantity > 1 ? `${c.description} × ${c.quantity}` : c.description}
-                    value={fmtCOP(c.totalPrice)}
-                  />
-                ))
-                : billing.additionalCharges > 0 && (
-                  <BillingRow label="Cargos adicionales" value={fmtCOP(billing.additionalCharges)} />
-                )
-              }
+
+              {serviceCharges.map(c => (
+                <BillingRow
+                  key={c.id}
+                  label={c.quantity > 1 ? `${c.description} × ${c.quantity}` : c.description}
+                  value={fmtCOP(c.totalPrice)}
+                />
+              ))}
+              {(() => {
+                const vitrineTotal = serviceCharges.reduce((sum, c) => sum + c.totalPrice, 0);
+                const multaAmount = billing.additionalCharges - vitrineTotal;
+                return multaAmount > 0 ? (
+                  <BillingRow label="Multa late checkout" value={fmtCOP(multaAmount)} />
+                ) : null;
+              })()}
               {billing.discounts > 0 && (
                 <BillingRow label="Descuentos" value={`-${fmtCOP(billing.discounts)}`} negative />
               )}
@@ -494,116 +540,120 @@ export default function CheckOut() {
           </div>
 
           {/* Métodos de pago */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-slate-700">Registrar pago</h3>
-              <button
-                onClick={handlePayAll}
-                className="text-xs text-slate-600 border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg"
-              >
-                Cobrar total en efectivo
-              </button>
-            </div>
+          {/* Métodos de pago — solo si hay saldo pendiente */}
+          {balanceDue > 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-slate-700">Registrar pago</h3>
+                <button
+                  onClick={handlePayAll}
+                  className="text-xs text-slate-600 border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg"
+                >
+                  Cobrar total en efectivo
+                </button>
+              </div>
 
-            <div className="space-y-3">
-              {payments.map((p, i) => (
-                <div key={i} className="flex gap-2 items-center">
-                  <select
-                    value={p.method}
-                    onChange={e => handlePaymentChange(i, 'method', e.target.value)}
-                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white"
-                  >
-                    {ALL_METHODS.map(m => (
-                      <option key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</option>
-                    ))}
-                  </select>
-                  <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-                    <input
-                      type="number" min="0" placeholder="0" value={p.amount}
-                      onChange={e => handlePaymentChange(i, 'amount', e.target.value)}
-                      className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                    />
+              <div className="space-y-3">
+                {payments.map((p, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <select
+                      value={p.method}
+                      onChange={e => handlePaymentChange(i, 'method', e.target.value)}
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white"
+                    >
+                      {ALL_METHODS.map(m => (
+                        <option key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</option>
+                      ))}
+                    </select>
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                      <input
+                        type="number" min="0" placeholder="0" value={p.amount}
+                        onChange={e => handlePaymentChange(i, 'amount', e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                      />
+                    </div>
+                    {payments.length > 1 && (
+                      <button onClick={() => handleRemovePayment(i)}
+                        className="text-slate-400 hover:text-red-500 text-lg leading-none px-1">×</button>
+                    )}
                   </div>
-                  {payments.length > 1 && (
-                    <button onClick={() => handleRemovePayment(i)}
-                      className="text-slate-400 hover:text-red-500 text-lg leading-none px-1">×</button>
+                ))}
+              </div>
+
+              <button onClick={handleAddPayment}
+                className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
+                <span className="text-base leading-none">+</span> Agregar otro método de pago
+              </button>
+
+              {/* Barra de totales */}
+              <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 space-y-1.5 text-sm">
+                <div className="flex justify-between text-slate-600">
+                  <span>Saldo a cobrar</span>
+                  <span className="font-medium">{fmtCOP(balanceDue)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Total recibido</span>
+                  <span className="font-medium">{fmtCOP(totalPaid)}</span>
+                </div>
+                <div className="border-t border-slate-200 pt-1.5">
+                  {pendingBalance > 0 && (
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-red-700">Falta por cobrar</span>
+                      <span className="font-semibold text-red-700">{fmtCOP(pendingBalance)}</span>
+                    </div>
+                  )}
+                  {pendingBalance === 0 && change === 0 && totalPaid > 0 && (
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-emerald-700">Pago exacto</span>
+                      <span className="font-semibold text-emerald-700">Sin cambio</span>
+                    </div>
                   )}
                 </div>
-              ))}
+              </div>
+
+              {pendingBalance > 0 && totalPaid > 0 && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  Faltan {fmtCOP(pendingBalance)} para completar el pago. El cliente debe cubrir el total antes de salir.
+                </div>
+              )}
+
+              {(paymentMutation.isError || confirmMutation.isError) && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700">
+                  {(paymentMutation.error as any)?.response?.data?.error
+                    ?? (confirmMutation.error as any)?.response?.data?.error
+                    ?? 'Error al registrar el pago. Intenta de nuevo.'}
+                </div>
+              )}
             </div>
-
-            <button onClick={handleAddPayment}
-              className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
-              <span className="text-base leading-none">+</span> Agregar otro método de pago
-            </button>
-
-            {/* Barra de totales */}
-            <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 space-y-1.5 text-sm">
-              <div className="flex justify-between text-slate-600">
-                <span>Saldo a cobrar</span>
-                <span className="font-medium">{fmtCOP(balanceDue)}</span>
-              </div>
-              <div className="flex justify-between text-slate-600">
-                <span>Total recibido</span>
-                <span className="font-medium">{fmtCOP(totalPaid)}</span>
-              </div>
-              <div className="border-t border-slate-200 pt-1.5">
-                {pendingBalance > 0 && (
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-red-700">Falta por cobrar</span>
-                    <span className="font-semibold text-red-700">{fmtCOP(pendingBalance)}</span>
-                  </div>
-                )}
-                {pendingBalance === 0 && change === 0 && totalPaid > 0 && (
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-emerald-700">Pago exacto</span>
-                    <span className="font-semibold text-emerald-700">Sin cambio</span>
-                  </div>
-                )}
-                
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
+                El saldo está completamente cubierto. No hay cobro pendiente.
               </div>
             </div>
+          )}
 
-            {pendingBalance > 0 && totalPaid > 0 && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                Faltan {fmtCOP(pendingBalance)} para completar el pago. El cliente debe cubrir el total antes de salir.
-              </div>
-            )}
-
-            {totalPaid === 0 && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
-                Ingresa el monto recibido. El cliente debe cubrir el saldo completo para que se registre la salida.
-              </div>
-            )}
-
-            {(paymentMutation.isError || confirmMutation.isError) && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700">
-                {(paymentMutation.error as any)?.response?.data?.error
-                  ?? (confirmMutation.error as any)?.response?.data?.error
-                  ?? 'Error al registrar el pago. Intenta de nuevo.'}
-              </div>
-            )}
-
-            {/* Botón — bloqueado hasta que cubra el saldo */}
-            <button
-              onClick={() => paymentMutation.mutate()}
-              disabled={isProcessing || !paymentCoversBalance}
-              className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl text-sm"
-            >
-              {isProcessing
-                ? 'Procesando salida...'
+          {/* Botón — siempre visible */}
+          <button
+            onClick={() => paymentMutation.mutate()}
+            disabled={isProcessing || !paymentCoversBalance}
+            className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl text-sm"
+          >
+            {isProcessing
+              ? 'Procesando salida...'
+              : balanceDue <= 0
+                ? 'Confirmar salida →'
                 : paymentCoversBalance
                   ? 'Registrar pago y confirmar salida →'
                   : 'Completa el pago para continuar'}
-            </button>
+          </button>
 
-            {!paymentCoversBalance && (
-              <p className="text-center text-xs text-slate-400">
-                La salida solo se confirma cuando el saldo quede en cero.
-              </p>
-            )}
-          </div>
+          {!paymentCoversBalance && balanceDue > 0 && (
+            <p className="text-center text-xs text-slate-400">
+              La salida solo se confirma cuando el saldo quede en cero.
+            </p>
+          )}
         </div>
       )}
 

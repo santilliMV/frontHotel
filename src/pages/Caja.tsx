@@ -69,7 +69,7 @@ interface PaymentTransaction {
   paymentDate: string;
   notes: string | null;
   isPartialPayment: boolean;
-  type: 'CHECKIN' | 'CHECKOUT' | 'RATO' | 'VITRINA';
+  type: 'CHECKIN' | 'CHECKOUT' | 'RATO' | 'VITRINA' | 'MULTA';
   guestName: string;
   roomNumber: string | null;
   reservationNumber: string | null;
@@ -238,6 +238,7 @@ const TYPE_CONFIG: Record<string, { label: string; code: string; color: string }
   CHECKOUT: { label: 'Saldo pendiente', code: 'S', color: 'bg-slate-100 text-slate-600' },
   RATO: { label: 'Rato', code: 'R', color: 'bg-purple-100 text-purple-700' },
   VITRINA: { label: 'Vitrina', code: 'V', color: 'bg-green-100 text-green-700' },
+  MULTA: { label: 'Multa', code: 'M', color: 'bg-red-100 text-red-700' },
 };
 
 function TypeBadge({ type, notes }: { type: string; notes?: string | null }) {

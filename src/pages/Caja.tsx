@@ -69,7 +69,7 @@ interface PaymentTransaction {
   paymentDate: string;
   notes: string | null;
   isPartialPayment: boolean;
-  type: 'CHECKIN' | 'CHECKOUT' | 'RATO' | 'VITRINA' | 'MULTA';
+  type: 'CHECKIN' | 'CHECKOUT' | 'RATO' | 'VITRINA' | 'MULTA' | 'IVA' | 'EMPLEADO';
   guestName: string;
   roomNumber: string | null;
   reservationNumber: string | null;
@@ -239,6 +239,8 @@ const TYPE_CONFIG: Record<string, { label: string; code: string; color: string }
   RATO: { label: 'Rato', code: 'R', color: 'bg-purple-100 text-purple-700' },
   VITRINA: { label: 'Vitrina', code: 'V', color: 'bg-green-100 text-green-700' },
   MULTA: { label: 'Multa', code: 'M', color: 'bg-red-100 text-red-700' },
+  IVA: { label: 'IVA (19%)', code: 'I', color: 'bg-indigo-100 text-indigo-700' },
+  EMPLEADO: { label: 'Deuda empleado', code: 'E', color: 'bg-amber-100 text-amber-700' },
 };
 
 function TypeBadge({ type, notes }: { type: string; notes?: string | null }) {

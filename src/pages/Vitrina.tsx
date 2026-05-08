@@ -104,12 +104,15 @@ function ModalProduct({
   product,
   onClose,
   onSuccess,
+  isAdmin,
 }: {
   product: VitrinaProduct | null
   onClose: () => void
   onSuccess: () => void
+  isAdmin: boolean
 }) {
   const isEdit = !!product
+  const canEditAll = isAdmin  // ← necesitas pasar isAdmin al modal
   const [name, setName] = useState(product?.name ?? '')
   const [category, setCategory] = useState(product?.category ?? 'BEVERAGE')
   const [price, setPrice] = useState(product?.unitPrice?.toString() ?? '')
@@ -119,9 +122,10 @@ function ModalProduct({
   const mutation = useMutation({
     mutationFn: () => {
       const body = {
-        name, category,
+        name,
+        category,  // si isAdmin no puede cambiarlo, queda el valor original del producto
         unitPrice: parseFloat(price),
-        currentStock: parseInt(stock),
+        currentStock: product?.currentStock ?? parseInt(stock),
         minStock: product?.minStock ?? 5,
         supplier: product?.supplier ?? null,
       }
@@ -152,15 +156,17 @@ function ModalProduct({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Categoría</label>
-              <select value={category} onChange={e => setCategory(e.target.value as any)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
-                <option value="BEVERAGE">Bebida</option>
-                <option value="SNACK">Snack</option>
-                <option value="OTHER">Otro</option>
-              </select>
-            </div>
+            {isAdmin && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Categoría</label>
+                <select value={category} onChange={e => setCategory(e.target.value as any)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+                  <option value="BEVERAGE">Bebida</option>
+                  <option value="SNACK">Snack</option>
+                  <option value="OTHER">Otro</option>
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Precio unitario</label>
               <div className="relative">
@@ -346,11 +352,13 @@ function ModalConsume({
       }
       if (consumerType === 'GUEST') {
         body.reservationId = reservationId
-        body.annotateToRoom = annotateToRoom
-        if (!annotateToRoom) body.paymentMethod = paymentMethod
+        body.annotateToRoom = true
       }
       if (consumerType === 'EXTERNAL') body.paymentMethod = paymentMethod
       if (consumerType === 'EMPLOYEE') body.employeeName = employeeName
+      if (consumerType === 'ADMIN') {
+        body.notes = `Consumo admin: ${adminUsername}${notes ? ' — ' + notes : ''}`
+      }
       return apiClient.post('/vitrina/consume/batch', body)
     },
     onSuccess,
@@ -383,7 +391,7 @@ function ModalConsume({
     if (cart.length === 0) return false
     if (consumerType === 'GUEST' && !reservationId) return false
     if (consumerType === 'EMPLOYEE' && !employeeName.trim()) return false
-    if (consumerType === 'ADMIN' && !passwordVerified) return false
+    if (consumerType === 'ADMIN' && !adminUsername) return false
     return true
   }
 
@@ -488,7 +496,13 @@ function ModalConsume({
                     { value: 'ADMIN', label: 'Admin' },
                   ] as { value: ConsumerType; label: string }[]).map(opt => (
                     <button key={opt.value}
-                      onClick={() => { setConsumerType(opt.value); setPasswordVerified(false); setAdminUsername(''); setAdminPassword('') }}
+                      onClick={() => {
+                        setConsumerType(opt.value);
+                        setAnnotateToRoom(opt.value === 'GUEST');
+                        setPasswordVerified(false);
+                        setAdminUsername('');
+                        setAdminPassword('');
+                      }}
                       className={`py-1.5 text-xs font-medium rounded-lg border transition-colors ${consumerType === opt.value
                         ? 'bg-slate-800 text-white border-slate-800'
                         : 'border-slate-300 text-slate-600 hover:bg-slate-50'
@@ -514,24 +528,9 @@ function ModalConsume({
                       ))}
                     </select>
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button onClick={() => setAnnotateToRoom(true)}
-                      className={`py-2 text-xs font-medium rounded-lg border transition-colors ${annotateToRoom ? 'bg-amber-600 text-white border-amber-600' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                        }`}>
-                      Anotar a habitación
-                    </button>
-                    <button onClick={() => setAnnotateToRoom(false)}
-                      className={`py-2 text-xs font-medium rounded-lg border transition-colors ${!annotateToRoom ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                        }`}>
-                      Paga ahora
-                    </button>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <p className="text-xs text-amber-700">Se anotará a la habitación y se cobra al checkout.</p>
                   </div>
-                  {!annotateToRoom && (
-                    <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
-                      {PAYMENT_METHODS.map(m => <option key={m} value={m}>{METHOD_LABELS[m]}</option>)}
-                    </select>
-                  )}
                 </div>
               )}
 
@@ -565,7 +564,7 @@ function ModalConsume({
                     <label className="block text-xs font-medium text-slate-600 mb-1">Administrador</label>
                     <select
                       value={adminUsername}
-                      onChange={e => { setAdminUsername(e.target.value); setPasswordVerified(false); setAdminPassword('') }}
+                      onChange={e => setAdminUsername(e.target.value)}
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
                       <option value="">Seleccionar admin...</option>
                       {employees.filter(u => u.role === 'ADMIN').map(u => (
@@ -573,34 +572,8 @@ function ModalConsume({
                       ))}
                     </select>
                   </div>
-                  {adminUsername && !passwordVerified && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Contraseña</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={adminPassword}
-                          onChange={e => setAdminPassword(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && verifyAdminPassword()}
-                          className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                          placeholder="Contraseña del admin" />
-                        <button
-                          onClick={verifyAdminPassword}
-                          disabled={!adminPassword || verifyingPassword}
-                          className="px-3 py-2 text-xs bg-slate-800 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50">
-                          {verifyingPassword ? '...' : 'Verificar'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {passwordVerified && (
-                    <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                      <span className="text-green-600 text-sm">✓</span>
-                      <p className="text-xs text-green-700 font-medium">Identidad verificada</p>
-                    </div>
-                  )}
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <p className="text-xs text-amber-700">No genera gasto ni registro en caja. Solo descuenta inventario.</p>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <p className="text-xs text-slate-600">Se registrará el consumo en el historial de vitrina.</p>
                   </div>
                 </div>
               )}
@@ -637,8 +610,12 @@ function ModalConsume({
 
 // ─── Modal: Deudas de empleados ───────────────────────────────────────────────
 
+
+
 function ModalDebts({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
+  const [payingDebt, setPayingDebt] = useState<{ id: string; amount: number; employeeName: string } | null>(null)
+  const [payMethod, setPayMethod] = useState('CASH')
 
   const { data: debts = [], isLoading } = useQuery<any[]>({
     queryKey: ['employee-debts-all'],
@@ -647,11 +624,14 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
   })
 
   const payMutation = useMutation({
-    mutationFn: (debtId: string) => apiClient.patch(`/vitrina/debts/${debtId}/pay`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['employee-debts-all'] }),
+    mutationFn: ({ id, method }: { id: string; method: string }) =>
+      apiClient.patch(`/vitrina/debts/${id}/pay`, { paymentMethod: method }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employee-debts-all'] })
+      setPayingDebt(null)
+    },
   })
 
-  // Agrupar por empleado
   const grouped = debts.reduce((acc: Record<string, any[]>, d: any) => {
     const key = d.employeeName
     if (!acc[key]) acc[key] = []
@@ -671,7 +651,6 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl flex flex-col" style={{ maxHeight: '85vh' }}>
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
             <h2 className="text-base font-semibold text-slate-800">Deudas de empleados</h2>
@@ -685,7 +664,6 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
 
-        {/* Contenido */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {isLoading ? (
             <p className="text-sm text-slate-400 text-center py-8">Cargando...</p>
@@ -697,7 +675,6 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
                 const totalEmpleado = (employeeDebts as any[]).reduce((s, d) => s + d.totalDebt, 0)
                 return (
                   <div key={employeeName}>
-                    {/* Encabezado del empleado */}
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="w-7 h-7 rounded-full bg-slate-800 text-white text-xs font-bold flex items-center justify-center">
@@ -709,7 +686,6 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
                       <span className="text-sm font-semibold text-red-600">{fmtCOP(totalEmpleado)}</span>
                     </div>
 
-                    {/* Tabla de deudas del empleado */}
                     <div className="rounded-lg border border-slate-200 overflow-hidden">
                       <table className="w-full text-sm">
                         <thead>
@@ -725,9 +701,7 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
                         <tbody>
                           {(employeeDebts as any[]).map((d: any) => (
                             <tr key={d.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                              <td className="px-4 py-2.5 font-medium text-slate-700">
-                                {d.product?.name ?? '—'}
-                              </td>
+                              <td className="px-4 py-2.5 font-medium text-slate-700">{d.product?.name ?? '—'}</td>
                               <td className="px-4 py-2.5 text-right text-slate-600">{d.quantity}</td>
                               <td className="px-4 py-2.5 text-right text-slate-500">{fmtCOP(d.unitPrice)}</td>
                               <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtCOP(d.totalDebt)}</td>
@@ -736,9 +710,8 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
                               </td>
                               <td className="px-4 py-2.5">
                                 <button
-                                  onClick={() => payMutation.mutate(d.id)}
-                                  disabled={payMutation.isPending}
-                                  className="px-3 py-1 text-xs bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-50">
+                                  onClick={() => { setPayingDebt({ id: d.id, amount: d.totalDebt, employeeName }); setPayMethod('CASH') }}
+                                  className="px-3 py-1 text-xs bg-green-700 text-white rounded-lg hover:bg-green-800">
                                   Pagar
                                 </button>
                               </td>
@@ -754,7 +727,6 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-100">
           <button onClick={onClose}
             className="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50">
@@ -762,6 +734,45 @@ function ModalDebts({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
+
+      {/* Mini-modal de confirmación de pago */}
+      {payingDebt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="font-semibold text-slate-800 mb-1">Registrar pago</h3>
+            <p className="text-xs text-slate-400 mb-4">{payingDebt.employeeName}</p>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 mb-4 flex justify-between text-sm">
+              <span className="text-slate-500">Monto a cobrar</span>
+              <span className="font-bold text-slate-800">{fmtCOP(payingDebt.amount)}</span>
+            </div>
+
+            <label className="block text-xs font-medium text-slate-600 mb-1">Método de pago</label>
+            <select
+              value={payMethod}
+              onChange={e => setPayMethod(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 mb-4">
+              {PAYMENT_METHODS.map(m => (
+                <option key={m} value={m}>{METHOD_LABELS[m]}</option>
+              ))}
+            </select>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPayingDebt(null)}
+                className="flex-1 border border-slate-200 rounded-lg py-2.5 text-sm text-slate-600 hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button
+                onClick={() => payMutation.mutate({ id: payingDebt.id, method: payMethod })}
+                disabled={payMutation.isPending}
+                className="flex-1 bg-green-700 hover:bg-green-800 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg py-2.5">
+                {payMutation.isPending ? 'Registrando...' : 'Confirmar pago'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -871,12 +882,11 @@ export default function Vitrina() {
             className="px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50">
             Deudas empleados
           </button>
-          {isAdmin && (
-            <button onClick={() => setModal({ type: 'newProduct' })}
-              className="px-4 py-2 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-700">
-              + Nuevo producto
-            </button>
-          )}
+          <button onClick={() => setModal({ type: 'newProduct' })}
+            className="px-4 py-2 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-700">
+            + Nuevo producto
+          </button>
+
         </div>
       </div>
 
@@ -964,13 +974,11 @@ export default function Vitrina() {
                         className="px-3 py-1.5 text-xs border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50">
                         Reabastecer
                       </button>
-                      {isAdmin && (
-                        <button
-                          onClick={() => setModal({ type: 'editProduct', product: p })}
-                          className="px-3 py-1.5 text-xs border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50">
-                          Editar
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setModal({ type: 'editProduct', product: p })}
+                        className="px-3 py-1.5 text-xs border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50">
+                        Editar
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1157,10 +1165,10 @@ export default function Vitrina() {
 
       {/* Modales */}
       {modal?.type === 'newProduct' && (
-        <ModalProduct product={null} onClose={() => setModal(null)} onSuccess={handleSuccess} />
+        <ModalProduct product={null} onClose={() => setModal(null)} onSuccess={handleSuccess} isAdmin={isAdmin} />
       )}
       {modal?.type === 'editProduct' && (
-        <ModalProduct product={modal.product} onClose={() => setModal(null)} onSuccess={handleSuccess} />
+        <ModalProduct product={modal.product} onClose={() => setModal(null)} onSuccess={handleSuccess} isAdmin={isAdmin} />
       )}
       {modal?.type === 'restock' && (
         <ModalRestock product={modal.product} onClose={() => setModal(null)} onSuccess={handleSuccess} />

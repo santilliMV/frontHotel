@@ -22,6 +22,8 @@ interface Props {
   onClose: () => void;
   onCreada: () => void;
   reservaExistente?: ReservationResponse;
+  reservaEditar?: ReservationResponse;       // modo edición completa (NUEVO)
+
 }
 
 const OCCUPANT_LABELS: Record<OccupantType, string> = {
@@ -32,18 +34,44 @@ const OCCUPANT_LABELS: Record<OccupantType, string> = {
 
 const STEPS = ['Contacto', 'Fechas', 'Habitación', 'Pago', 'Confirmar'];
 
-export default function NuevaReservaModal({ onClose, onCreada, reservaExistente }: Props) {
+// 2. Al inicio del componente, después de la línea isCambioHabitacion:
+export default function NuevaReservaModal({ onClose, onCreada, reservaExistente, reservaEditar }: Props) {
   const isCambioHabitacion = !!reservaExistente;
+  const isEditar = !!reservaEditar;
   const queryClient = useQueryClient();
 
   const [step, setStep] = useState(isCambioHabitacion ? 2 : 0);
-  const [form, setForm] = useState<Partial<CreateReservationDTO>>({
-    numberOfGuests: 1,
-    occupantType: 'INDIVIDUAL',
-    companions: [],
-    roomTypeId: reservaExistente?.roomTypeId,
-    checkInDate: reservaExistente?.checkInDate,
-    checkOutDate: reservaExistente?.checkOutDate,
+
+  // Precargar form con datos existentes si es edición
+  const [form, setForm] = useState<Partial<CreateReservationDTO>>(() => {
+    if (reservaEditar) {
+      return {
+        firstName: reservaEditar.guestName?.split(' ')[0] ?? '',
+        lastName: reservaEditar.guestName?.split(' ').slice(1).join(' ') ?? '',
+        phone: reservaEditar.guestPhone,
+        roomTypeId: reservaEditar.roomTypeId,
+        roomId: reservaEditar.roomId ?? undefined,
+        checkInDate: reservaEditar.checkInDate,
+        checkOutDate: reservaEditar.checkOutDate,
+        numberOfGuests: reservaEditar.numberOfGuests,
+        occupantType: reservaEditar.occupantType,
+        approximateArrivalTime: reservaEditar.approximateArrivalTime ?? '',
+        specialRequests: reservaEditar.specialRequests ?? '',
+        companions: reservaEditar.companions.map(c => ({
+          name: c.name,
+          documentNumber: c.documentNumber ?? '',
+          phone: c.phone ?? '',
+        })),
+      };
+    }
+    return {
+      numberOfGuests: 1,
+      occupantType: 'INDIVIDUAL',
+      companions: [],
+      roomTypeId: reservaExistente?.roomTypeId,
+      checkInDate: reservaExistente?.checkInDate,
+      checkOutDate: reservaExistente?.checkOutDate,
+    };
   });
   const [newCompanion, setNewCompanion] = useState<ReservationCompanion>({ name: '' });
   const [payments, setPayments] = useState<PaymentEntry[]>([{ method: 'CASH', amount: '' }]);
@@ -129,6 +157,19 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
     },
   });
 
+  // 3. Agregar la mutation de edición, después de changeMutation:
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CreateReservationDTO }) =>
+      apiClient.put(`/reservations/${id}`, data).then(r => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reservations'] });
+      onCreada();
+    },
+    onError: (e: any) => {
+      setError(e?.response?.data?.error || e?.response?.data?.message || 'Error al guardar cambios');
+    },
+  });
+
   const set = (key: keyof CreateReservationDTO, value: any) =>
     setForm(f => ({ ...f, [key]: value }));
 
@@ -154,13 +195,17 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
   };
 
   const handleSubmit = () => {
-    console.log('roomId que se envía:', form.roomId);
-    console.log('form completo:', form);
-    console.log('handleSubmit ejecutado', { isCambioHabitacion, roomId: form.roomId, reservaId: reservaExistente?.id });
     setError('');
-    if (isCambioHabitacion && form.roomId) {
-      console.log('EJECUTANDO changeMutation con:', { id: reservaExistente.id, roomId: form.roomId });
 
+    if (isEditar && reservaEditar) {
+      editMutation.mutate({
+        id: reservaEditar.id,
+        data: form as CreateReservationDTO,
+      });
+      return;
+    }
+
+    if (isCambioHabitacion && form.roomId) {
       changeMutation.mutate({ id: reservaExistente.id, roomId: form.roomId });
       return;
     }
@@ -177,7 +222,8 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
 
   const selectedRoom = availableRooms.find(r => r.id === form.roomId);
   const selectedRoomType = roomTypes.find(r => r.id === form.roomTypeId);
-  const isPending = createMutation.isPending || changeMutation.isPending;
+  // 5. isPending — agregar editMutation:
+  const isPending = createMutation.isPending || changeMutation.isPending || editMutation.isPending;
 
   const visibleSteps = isCambioHabitacion ? ['Habitación', 'Confirmar'] : STEPS;
   const visibleStep = isCambioHabitacion ? step - 2 : step;
@@ -191,7 +237,11 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
           <h2 className="text-lg font-bold text-gray-900">
-            {isCambioHabitacion ? `Cambiar habitación — ${reservaExistente.reservationNumber}` : 'Nueva reserva'}
+            {isCambioHabitacion
+              ? `Cambiar habitación — ${reservaExistente.reservationNumber}`
+              : isEditar
+                ? `Editar reserva — ${reservaEditar!.reservationNumber}`
+                : 'Nueva reserva'}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
         </div>
@@ -589,7 +639,11 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente 
               <button onClick={handleSubmit} disabled={isPending}
                 className="px-5 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 flex items-center gap-2">
                 {isPending && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                {isPending ? 'Guardando...' : (isCambioHabitacion ? '✓ Cambiar habitación' : '✓ Crear reserva')}
+                {isPending ? 'Guardando...' : isCambioHabitacion
+                  ? '✓ Cambiar habitación'
+                  : isEditar
+                    ? '✓ Guardar cambios'
+                    : '✓ Crear reserva'}
               </button>
             );
           })()}

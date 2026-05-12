@@ -41,10 +41,12 @@ export default function Reservas() {
   const [selectedMonth, setSelectedMonth] = useState(toMonthStr(new Date()));
   const [busqueda, setBusqueda] = useState('');
   const [detalle, setDetalle] = useState<ReservationResponse | null>(null);
+  const [reservaEditar, setReservaEditar] = useState<ReservationResponse | null>(null);
 
   const { data: reservas = [], isLoading } = useQuery({
     queryKey: ['reservations', 'confirmed', selectedMonth],
     queryFn: () => apiClient.get(`/reservations/confirmed?month=${selectedMonth}`).then(r => r.data),
+    staleTime: 0,
   });
 
   const cancelMutation = useMutation({
@@ -183,23 +185,20 @@ export default function Reservas() {
         <div className="space-y-5">
           {llegan.length > 0 && (
             <Grupo titulo="Llegan hoy" color="blue" reservas={llegan}
-              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} />
+              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} onEditar={setReservaEditar} />
           )}
           {futuras.length > 0 && (
             <Grupo titulo="Próximas llegadas" color="gray" reservas={futuras}
-              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} />
+              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} onEditar={setReservaEditar} />
           )}
           {pasadas.length > 0 && (
             <Grupo titulo="No se presentaron" color="amber" reservas={pasadas}
-              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} />
+              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} onEditar={setReservaEditar} />
           )}
-          {completadas.length > 0 && (
-            <Grupo titulo="Completadas" color="green" reservas={completadas}
-              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} />
-          )}
+
           {canceladas.length > 0 && (
             <Grupo titulo="Canceladas" color="red" reservas={canceladas}
-              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} />
+              onVer={setDetalle} onCheckin={handleCheckin} onCancelar={handleCancelar} onEditar={setReservaEditar} />
           )}
         </div>
       )}
@@ -211,6 +210,7 @@ export default function Reservas() {
           onClose={() => setDetalle(null)}
           onCheckin={() => handleCheckin(detalle)}
           onCancelar={() => handleCancelar(detalle.id)}
+          onEditar={() => { setDetalle(null); setReservaEditar(detalle); }}
         />
       )}
 
@@ -223,19 +223,31 @@ export default function Reservas() {
           }}
         />
       )}
+
+      {reservaEditar && (
+        <NuevaReservaModal
+          onClose={() => setReservaEditar(null)}
+          onCreada={() => {
+            setReservaEditar(null);
+            queryClient.invalidateQueries({ queryKey: ['reservations'] });
+          }}
+          reservaEditar={reservaEditar}
+        />
+      )}
     </div>
   );
 }
 
 // ─── Grupo ────────────────────────────────────────────────────────────────────
 
-function Grupo({ titulo, color, reservas, onVer, onCheckin, onCancelar }: {
+function Grupo({ titulo, color, reservas, onVer, onCheckin, onCancelar, onEditar }: {
   titulo: string;
   color: 'blue' | 'gray' | 'amber' | 'green' | 'red';
   reservas: ReservationResponse[];
   onVer: (r: ReservationResponse) => void;
   onCheckin: (r: ReservationResponse) => void;
   onCancelar: (id: string) => void;
+  onEditar: (r: ReservationResponse) => void;
 }) {
   const header = {
     blue: 'bg-blue-50 border-blue-100 text-blue-800',
@@ -256,7 +268,8 @@ function Grupo({ titulo, color, reservas, onVer, onCheckin, onCancelar }: {
           <ReservaRow key={r.id} reserva={r}
             onVer={() => onVer(r)}
             onCheckin={() => onCheckin(r)}
-            onCancelar={() => onCancelar(r.id)} />
+            onCancelar={() => onCancelar(r.id)}
+            onEditar={() => onEditar(r)} />
         ))}
       </div>
     </div>
@@ -265,11 +278,12 @@ function Grupo({ titulo, color, reservas, onVer, onCheckin, onCancelar }: {
 
 // ─── Fila ─────────────────────────────────────────────────────────────────────
 
-function ReservaRow({ reserva, onVer, onCheckin, onCancelar }: {
+function ReservaRow({ reserva, onVer, onCheckin, onCancelar, onEditar }: {
   reserva: ReservationResponse;
   onVer: () => void;
   onCheckin: () => void;
   onCancelar: () => void;
+  onEditar: () => void;
 }) {
   return (
     <div className="px-5 py-3.5 flex items-center gap-4 hover:bg-slate-50 transition-colors">
@@ -311,6 +325,10 @@ function ReservaRow({ reserva, onVer, onCheckin, onCancelar }: {
           className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100">
           Ver
         </button>
+        <button onClick={onEditar}
+          className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100">
+          Editar
+        </button>
         {(reserva.status === 'CONFIRMED' || reserva.status === 'PENDING') && (
           <>
             <button onClick={onCheckin}
@@ -330,11 +348,12 @@ function ReservaRow({ reserva, onVer, onCheckin, onCancelar }: {
 
 // ─── Modal detalle ────────────────────────────────────────────────────────────
 
-function DetalleModal({ reserva, onClose, onCheckin, onCancelar }: {
+function DetalleModal({ reserva, onClose, onCheckin, onCancelar, onEditar }: {
   reserva: ReservationResponse;
   onClose: () => void;
   onCheckin: () => void;
   onCancelar: () => void;
+  onEditar: () => void;
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -394,6 +413,10 @@ function DetalleModal({ reserva, onClose, onCheckin, onCancelar }: {
           </button>
           {(reserva.status === 'CONFIRMED' || reserva.status === 'PENDING') && (
             <>
+              <button onClick={onEditar}
+                className="px-4 py-2 border border-blue-200 text-blue-600 rounded-lg text-sm hover:bg-blue-50">
+                Editar
+              </button>
               <button onClick={onCancelar}
                 className="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm hover:bg-red-50">
                 Cancelar reserva

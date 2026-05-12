@@ -17,6 +17,8 @@ import { usePageTitle } from '../hooks/usePageTitle';
 interface TowelTx {
   type: string;
   reservationNumber: string | null;
+  notes: string | null;
+
 }
 
 interface RoomByDate {
@@ -585,8 +587,11 @@ function RoomRow({
   });
 
   // El aseo ya fue hecho hoy si hay una tx NIGHTLY_CHANGE para el número de reserva de esta habitación
+  // Reemplaza esto:
   const aseoHecho = esIntermedio && towelTxsHoy.some(
-    t => t.type === 'NIGHTLY_CHANGE' && t.reservationNumber === room.reservationNumber
+    t => t.type === 'NIGHTLY_CHANGE'
+      && t.reservationNumber === room.reservationNumber
+      && t.notes?.startsWith('Aseo')
   );
 
   const [confirming, setConfirming] = useState(false);
@@ -595,8 +600,8 @@ function RoomRow({
   const handleAseoSi = async () => {
     if (!room.reservationId || !room.id) return;
     setAseoLoading(true);
-    const towelsToReturn = roomTowels?.currentInRoom ?? room.numberOfGuests ?? 1;
     const towelsToDeliver = room.numberOfGuests ?? 1;
+    const towelsToReturn = towelsToDeliver; // en aseo siempre se recogen las mismas que se entregan
     try {
       await apiClient.post(
         `/towels/nightly-change?reservationId=${room.reservationId}&roomId=${room.id}&towelsReturned=${towelsToReturn}&towelsDelivered=${towelsToDeliver}&nightNumber=0`

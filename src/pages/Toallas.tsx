@@ -59,6 +59,8 @@ const TYPE_LABEL: Record<string, string> = {
   FROM_LAUNDRY: 'Retorno lavandería',
   NIGHTLY_CHANGE: 'Aseo diario',
   MANUAL_ADJUSTMENT: 'Ajuste manual',
+  WRITE_OFF: 'Baja',
+  NEW_STOCK: 'Entrada nueva',
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -67,6 +69,8 @@ const TYPE_COLOR: Record<string, string> = {
   FROM_LAUNDRY: 'bg-green-50 text-green-800 border-green-200',
   NIGHTLY_CHANGE: 'bg-teal-50 text-teal-800 border-teal-200',
   MANUAL_ADJUSTMENT: 'bg-slate-100 text-slate-700 border-slate-200',
+  WRITE_OFF: 'bg-red-50 text-red-800 border-red-200',
+  NEW_STOCK: 'bg-blue-50 text-blue-800 border-blue-200',
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -342,9 +346,161 @@ function ModalAdjust({
   )
 }
 
+// ─── Modal: Dar de baja toallas ──────────────────────────────────────────────
+
+function ModalWriteOff({
+  maxAvailable,
+  onClose,
+  onSuccess,
+}: {
+  maxAvailable: number
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [qty, setQty] = useState('')
+  const [reason, setReason] = useState('')
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiClient.post(`/towels/write-off?quantity=${qty}&reason=${encodeURIComponent(reason)}`).then(r => r.data),
+    onSuccess,
+  })
+
+  const qtyNum = parseInt(qty) || 0
+  const isValid = qtyNum >= 1 && qtyNum <= maxAvailable && reason.trim().length > 0
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-sm p-6">
+        <h2 className="text-base font-semibold text-slate-800 mb-1">Dar de baja toallas</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Para toallas dañadas o perdidas. Disponibles: <strong>{maxAvailable}</strong>
+        </p>
+
+        <label className="block text-sm font-medium text-slate-700 mb-1">Cantidad</label>
+        <input
+          type="number"
+          min={1}
+          max={maxAvailable}
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 mb-3"
+          placeholder={`Máx ${maxAvailable}`}
+          value={qty}
+          onChange={e => setQty(e.target.value)}
+        />
+
+        <label className="block text-sm font-medium text-slate-700 mb-1">
+          Motivo <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          placeholder="Ej: Toallas rotas, pérdida en lavandería..."
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+        />
+
+        {mutation.isError && (
+          <p className="text-xs text-red-600 mt-2">
+            {(mutation.error as Error)?.message || 'Error al registrar.'}
+          </p>
+        )}
+
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mutation.mutate()}
+            disabled={!isValid || mutation.isPending}
+            className="flex-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+          >
+            {mutation.isPending ? 'Registrando...' : 'Dar de baja'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal: Entrada de toallas nuevas ────────────────────────────────────────
+
+function ModalNewStock({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [qty, setQty] = useState('')
+  const [reason, setReason] = useState('')
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiClient.post(`/towels/new-stock?quantity=${qty}&reason=${encodeURIComponent(reason)}`).then(r => r.data),
+    onSuccess,
+  })
+
+  const isValid = (parseInt(qty) || 0) >= 1 && reason.trim().length > 0
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-sm p-6">
+        <h2 className="text-base font-semibold text-slate-800 mb-1">Entrada de toallas nuevas</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Registra toallas nuevas que ingresan al hotel (compra, donación, etc.)
+        </p>
+
+        <label className="block text-sm font-medium text-slate-700 mb-1">Cantidad</label>
+        <input
+          type="number"
+          min={1}
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 mb-3"
+          placeholder="Ej: 20"
+          value={qty}
+          onChange={e => setQty(e.target.value)}
+        />
+
+        <label className="block text-sm font-medium text-slate-700 mb-1">
+          Motivo <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          placeholder="Ej: Compra mensual, reposición..."
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+        />
+
+        {mutation.isError && (
+          <p className="text-xs text-red-600 mt-2">Error al registrar.</p>
+        )}
+
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mutation.mutate()}
+            disabled={!isValid || mutation.isPending}
+            className="flex-1 px-4 py-2 text-sm bg-blue-700 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50"
+          >
+            {mutation.isPending ? 'Registrando...' : 'Registrar entrada'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type ModalType = 'init' | 'sendLaundry' | 'returnLaundry' | 'adjust' | null
+type ModalType = 'init' | 'sendLaundry' | 'returnLaundry' | 'adjust' | 'writeOff' | 'newStock' | null
 
 export default function Toallas() {
   usePageTitle('Toallas');
@@ -411,6 +567,20 @@ export default function Toallas() {
             className="px-3 py-2 text-sm bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-40"
           >
             Retorno de lavandería
+          </button>
+          <button
+            onClick={() => setModal('newStock')}
+            disabled={!inventory}
+            className="px-3 py-2 text-sm bg-blue-700 text-white rounded-lg hover:bg-blue-800 disabled:opacity-40"
+          >
+            Entrada nuevas
+          </button>
+          <button
+            onClick={() => setModal('writeOff')}
+            disabled={!inventory || inventory.cleanTowels === 0}
+            className="px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40"
+          >
+            Dar de baja
           </button>
         </div>
       </div>
@@ -591,6 +761,19 @@ export default function Toallas() {
       {modal === 'adjust' && inventory && (
         <ModalAdjust
           current={inventory}
+          onClose={() => setModal(null)}
+          onSuccess={handleSuccess}
+        />
+      )}
+      {modal === 'writeOff' && inventory && (
+        <ModalWriteOff
+          maxAvailable={inventory.cleanTowels}
+           onClose={() => setModal(null)}
+          onSuccess={handleSuccess}
+        />
+      )}
+      {modal === 'newStock' && (
+        <ModalNewStock
           onClose={() => setModal(null)}
           onSuccess={handleSuccess}
         />

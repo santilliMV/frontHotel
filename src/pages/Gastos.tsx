@@ -3,8 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../api/client';
 import { usePageTitle } from '../hooks/usePageTitle';
 
-
-// ── Tipos ────────────────────────────────────────────────────────────────────
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 
 interface Expense {
   id: string;
@@ -18,6 +17,7 @@ interface Expense {
   registeredBy: string;
   registeredAt: string;
   notes: string | null;
+  affectsCash: boolean;
 }
 
 interface TodayResponse {
@@ -34,21 +34,22 @@ interface ExpenseRequest {
   paymentMethod: string;
   reference?: string;
   notes?: string;
+  affectsCash: boolean;
 }
 
-// ── Constantes ───────────────────────────────────────────────────────────────
+// ── Constantes ────────────────────────────────────────────────────────────────
 
-const CATEGORIES: { value: string; label: string }[] = [
-  { value: 'VARIOS',        label: 'Varios' },
-  { value: 'COMPRA_VITRINA',label: 'Compra Vitrina' },
-  { value: 'ASEO',          label: 'Aseo' },
-  { value: 'MANTENIMIENTO', label: 'Mantenimiento' },
-  { value: 'SERVICIOS',     label: 'Servicios' },
-  { value: 'SUELDOS',       label: 'Sueldos' },
-  { value: 'OTRO',          label: 'Otro' },
+const CATEGORIES = [
+  { value: 'VARIOS',         label: 'Varios' },
+  { value: 'COMPRA_VITRINA', label: 'Compra Vitrina' },
+  { value: 'ASEO',           label: 'Aseo' },
+  { value: 'MANTENIMIENTO',  label: 'Mantenimiento' },
+  { value: 'SERVICIOS',      label: 'Servicios' },
+  { value: 'SUELDOS',        label: 'Sueldos' },
+  { value: 'OTRO',           label: 'Otro' },
 ];
 
-const PAYMENT_METHODS: { value: string; label: string }[] = [
+const PAYMENT_METHODS = [
   { value: 'CASH',     label: 'Efectivo' },
   { value: 'CARD',     label: 'Tarjeta' },
   { value: 'TRANSFER', label: 'Transferencia' },
@@ -65,6 +66,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   CORTESIA:       'bg-pink-100 text-pink-700',
   OTRO:           'bg-yellow-100 text-yellow-700',
 };
+
+type TabType = 'TODOS' | 'CAJA' | 'GENERAL';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -88,18 +91,15 @@ const formatDate = (str: string) =>
 const categoryLabel = (v: string) => CATEGORIES.find(c => c.value === v)?.label ?? v;
 const methodLabel   = (v: string) => PAYMENT_METHODS.find(m => m.value === v)?.label ?? v;
 
-// ── API calls ─────────────────────────────────────────────────────────────────
+// ── API ───────────────────────────────────────────────────────────────────────
 
 const fetchExpenses = async (date: string): Promise<TodayResponse> => {
   const today = toLocalDateStr(new Date());
-  const url = date === today
-    ? '/expenses/today'
-    : `/expenses/date/${date}`;
+  const url = date === today ? '/expenses/today' : `/expenses/date/${date}`;
   const res = await apiClient.get(url);
   if (Array.isArray(res.data)) {
     const expenses: Expense[] = res.data;
-    const total = expenses.reduce((s, e) => s + e.amount, 0);
-    return { expenses, total };
+    return { expenses, total: expenses.reduce((s, e) => s + e.amount, 0) };
   }
   return res.data as TodayResponse;
 };
@@ -120,6 +120,7 @@ interface FormState {
   paymentMethod: string;
   reference: string;
   notes: string;
+  affectsCash: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -131,14 +132,10 @@ const EMPTY_FORM: FormState = {
   paymentMethod: 'CASH',
   reference: '',
   notes: '',
+  affectsCash: true,
 };
 
-interface ModalProps {
-  onClose: () => void;
-  onSaved: () => void;
-}
-
-function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
+function NuevoGastoModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState('');
 
@@ -164,6 +161,7 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
       amount: amountNum,
       reason: form.reason.trim(),
       paymentMethod: form.paymentMethod,
+      affectsCash: form.affectsCash,
     };
     if (form.subcategory.trim()) body.subcategory = form.subcategory.trim();
     if (form.reference.trim())   body.reference   = form.reference.trim();
@@ -175,6 +173,7 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <h2 className="text-base font-semibold text-slate-800">Registrar gasto</h2>
@@ -189,27 +188,53 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
             </div>
           )}
 
+          {/* Toggle: afecta caja o general */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+            <button
+              onClick={() => setForm(prev => ({ ...prev, affectsCash: true }))}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                form.affectsCash
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Gasto de caja
+            </button>
+            <button
+              onClick={() => setForm(prev => ({ ...prev, affectsCash: false }))}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                !form.affectsCash
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Gasto general
+            </button>
+          </div>
+
+          {/* Descripción del tipo seleccionado */}
+          <p className="text-xs text-slate-400 -mt-2">
+            {form.affectsCash
+              ? 'Este gasto restará del total de la caja diaria.'
+              : 'Este gasto solo queda anotado. No afecta el valor de la caja.'}
+          </p>
+
           {/* Fecha y método */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Fecha</label>
               <input
-                type="date"
-                value={form.date}
-                onChange={set('date')}
+                type="date" value={form.date} onChange={set('date')}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Método de pago</label>
               <select
-                value={form.paymentMethod}
-                onChange={set('paymentMethod')}
+                value={form.paymentMethod} onChange={set('paymentMethod')}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
               >
-                {PAYMENT_METHODS.map(m => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
+                {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </div>
           </div>
@@ -219,21 +244,18 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Categoría</label>
               <select
-                value={form.category}
-                onChange={set('category')}
+                value={form.category} onChange={set('category')}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
               >
-                {CATEGORIES.map(c => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
+                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Subcategoría <span className="text-slate-400">(opcional)</span></label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Subcategoría <span className="text-slate-400">(opcional)</span>
+              </label>
               <input
-                type="text"
-                value={form.subcategory}
-                onChange={set('subcategory')}
+                type="text" value={form.subcategory} onChange={set('subcategory')}
                 placeholder="Ej: Limpieza baños"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
@@ -242,11 +264,11 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
 
           {/* Motivo */}
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Motivo <span className="text-red-500">*</span></label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Motivo <span className="text-red-500">*</span>
+            </label>
             <input
-              type="text"
-              value={form.reason}
-              onChange={set('reason')}
+              type="text" value={form.reason} onChange={set('reason')}
               placeholder="Descripción del gasto"
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
@@ -255,22 +277,21 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
           {/* Monto y referencia */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Monto <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Monto <span className="text-red-500">*</span>
+              </label>
               <input
-                type="number"
-                value={form.amount}
-                onChange={set('amount')}
-                placeholder="0"
-                min="0"
+                type="number" value={form.amount} onChange={set('amount')}
+                placeholder="0" min="0"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Referencia <span className="text-slate-400">(opcional)</span></label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Referencia <span className="text-slate-400">(opcional)</span>
+              </label>
               <input
-                type="text"
-                value={form.reference}
-                onChange={set('reference')}
+                type="text" value={form.reference} onChange={set('reference')}
                 placeholder="No. factura, recibo..."
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
@@ -279,11 +300,11 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
 
           {/* Notas */}
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Notas <span className="text-slate-400">(opcional)</span></label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Notas <span className="text-slate-400">(opcional)</span>
+            </label>
             <textarea
-              value={form.notes}
-              onChange={set('notes')}
-              rows={2}
+              value={form.notes} onChange={set('notes')} rows={2}
               placeholder="Observaciones adicionales"
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 resize-none"
             />
@@ -292,10 +313,7 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
 
         {/* Footer */}
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-xl">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium"
-          >
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium">
             Cancelar
           </button>
           <button
@@ -311,7 +329,7 @@ function NuevoGastoModal({ onClose, onSaved }: ModalProps) {
   );
 }
 
-// ── Componente por categoría (resumen) ────────────────────────────────────────
+// ── Resumen por categoría ─────────────────────────────────────────────────────
 
 function CategorySummary({ expenses }: { expenses: Expense[] }) {
   const totals = expenses.reduce<Record<string, number>>((acc, e) => {
@@ -339,11 +357,12 @@ function CategorySummary({ expenses }: { expenses: Expense[] }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 
 export default function Gastos() {
-    usePageTitle('Gastos');
+  usePageTitle('Gastos');
   const today = toLocalDateStr(new Date());
   const [selectedDate, setSelectedDate] = useState(today);
   const [showModal, setShowModal] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
+  const [activeTab, setActiveTab] = useState<TabType>('TODOS');
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError } = useQuery<TodayResponse>({
@@ -351,20 +370,25 @@ export default function Gastos() {
     queryFn: () => fetchExpenses(selectedDate),
   });
 
-  const expenses = data?.expenses ?? [];
-  const totalGeneral = data?.total ?? 0;
+  const allExpenses = data?.expenses ?? [];
 
-  const filtered = filterCategory
-    ? expenses.filter(e => e.category === filterCategory)
-    : expenses;
+  // Filtrar por tab
+  const byTab = activeTab === 'CAJA'
+    ? allExpenses.filter(e => e.affectsCash)
+    : activeTab === 'GENERAL'
+    ? allExpenses.filter(e => !e.affectsCash)
+    : allExpenses;
+
+  // Filtrar por categoría sobre los del tab
+  const filtered = filterCategory ? byTab.filter(e => e.category === filterCategory) : byTab;
+
+  // Totales
+  const totalCaja    = allExpenses.filter(e => e.affectsCash).reduce((s, e) => s + e.amount, 0);
+  const totalGeneral = allExpenses.filter(e => !e.affectsCash).reduce((s, e) => s + e.amount, 0);
+  const totalTodos   = allExpenses.reduce((s, e) => s + e.amount, 0);
 
   const isToday = selectedDate === today;
 
-  const handleSaved = () => {
-    queryClient.invalidateQueries({ queryKey: ['expenses', selectedDate] });
-  };
-
-  // Navegar fecha
   const changeDate = (delta: number) => {
     const d = new Date(selectedDate + 'T12:00:00');
     d.setDate(d.getDate() + delta);
@@ -375,7 +399,7 @@ export default function Gastos() {
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
 
-        {/* ── Encabezado ── */}
+        {/* Encabezado */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-slate-800">Gastos</h1>
@@ -390,76 +414,86 @@ export default function Gastos() {
           </button>
         </div>
 
-        {/* ── Selector de fecha ── */}
+        {/* Selector de fecha */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => changeDate(-1)}
-            className="p-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-600 text-sm"
-          >
+          <button onClick={() => changeDate(-1)} className="p-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-600 text-sm">
             &#8592;
           </button>
           <input
-            type="date"
-            value={selectedDate}
+            type="date" value={selectedDate}
             onChange={e => setSelectedDate(e.target.value)}
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white"
           />
           <button
-            onClick={() => changeDate(1)}
-            disabled={selectedDate >= today}
+            onClick={() => changeDate(1)} disabled={selectedDate >= today}
             className="p-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-600 text-sm disabled:opacity-40"
           >
             &#8594;
           </button>
           {selectedDate !== today && (
-            <button
-              onClick={() => setSelectedDate(today)}
-              className="text-xs text-slate-500 hover:text-slate-700 underline ml-1"
-            >
+            <button onClick={() => setSelectedDate(today)} className="text-xs text-slate-500 hover:text-slate-700 underline ml-1">
               Hoy
             </button>
           )}
         </div>
 
-        {/* ── Tarjeta resumen total ── */}
-        <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Total gastos</p>
-            <p className="text-2xl font-bold text-slate-800 mt-0.5">{formatCOP(totalGeneral)}</p>
+        {/* Tarjetas de resumen */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
+            <p className="text-xs text-slate-400 uppercase tracking-wide font-medium">Total</p>
+            <p className="text-xl font-bold text-slate-800 mt-0.5">{formatCOP(totalTodos)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{allExpenses.length} registro{allExpenses.length !== 1 ? 's' : ''}</p>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-slate-500">{expenses.length} registro{expenses.length !== 1 ? 's' : ''}</p>
-            {!isToday && (
-              <p className="text-xs text-amber-600 mt-0.5">Historial — solo lectura</p>
-            )}
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
+            <p className="text-xs text-slate-400 uppercase tracking-wide font-medium">Afectan caja</p>
+            <p className="text-xl font-bold text-red-600 mt-0.5">{formatCOP(totalCaja)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{allExpenses.filter(e => e.affectsCash).length} registro{allExpenses.filter(e => e.affectsCash).length !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
+            <p className="text-xs text-slate-400 uppercase tracking-wide font-medium">Generales</p>
+            <p className="text-xl font-bold text-slate-500 mt-0.5">{formatCOP(totalGeneral)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{allExpenses.filter(e => !e.affectsCash).length} registro{allExpenses.filter(e => !e.affectsCash).length !== 1 ? 's' : ''}</p>
           </div>
         </div>
 
-        {/* ── Resumen por categoría ── */}
-        {expenses.length > 0 && <CategorySummary expenses={expenses} />}
+        {/* Tabs */}
+        <div className="flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-lg w-fit">
+          {(['TODOS', 'CAJA', 'GENERAL'] as TabType[]).map(tab => (
+            <button
+              key={tab}
+              onClick={() => { setActiveTab(tab); setFilterCategory(''); }}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                activeTab === tab
+                  ? 'bg-slate-800 text-white'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {tab === 'TODOS' ? 'Todos' : tab === 'CAJA' ? 'Afectan caja' : 'Generales'}
+            </button>
+          ))}
+        </div>
 
-        {/* ── Filtro por categoría ── */}
-        {expenses.length > 0 && (
+        {/* Resumen por categoría */}
+        {byTab.length > 0 && <CategorySummary expenses={byTab} />}
+
+        {/* Filtro por categoría */}
+        {byTab.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500">Filtrar:</span>
             <button
               onClick={() => setFilterCategory('')}
               className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-                filterCategory === ''
-                  ? 'bg-slate-800 text-white border-slate-800'
-                  : 'border-slate-300 text-slate-600 hover:border-slate-400'
+                filterCategory === '' ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:border-slate-400'
               }`}
             >
               Todos
             </button>
-            {[...new Set(expenses.map(e => e.category))].map(cat => (
+            {[...new Set(byTab.map(e => e.category))].map(cat => (
               <button
                 key={cat}
                 onClick={() => setFilterCategory(filterCategory === cat ? '' : cat)}
                 className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-                  filterCategory === cat
-                    ? 'bg-slate-800 text-white border-slate-800'
-                    : 'border-slate-300 text-slate-600 hover:border-slate-400'
+                  filterCategory === cat ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:border-slate-400'
                 }`}
               >
                 {categoryLabel(cat)}
@@ -468,10 +502,8 @@ export default function Gastos() {
           </div>
         )}
 
-        {/* ── Lista de gastos ── */}
-        {isLoading && (
-          <div className="text-center py-12 text-slate-400 text-sm">Cargando gastos...</div>
-        )}
+        {/* Lista */}
+        {isLoading && <div className="text-center py-12 text-slate-400 text-sm">Cargando gastos...</div>}
 
         {isError && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
@@ -482,8 +514,10 @@ export default function Gastos() {
         {!isLoading && !isError && filtered.length === 0 && (
           <div className="text-center py-16">
             <p className="text-slate-400 text-sm">
-              {expenses.length === 0
+              {allExpenses.length === 0
                 ? 'No hay gastos registrados para este día.'
+                : byTab.length === 0
+                ? `No hay gastos ${activeTab === 'CAJA' ? 'que afecten la caja' : 'generales'} para este día.`
                 : 'No hay gastos en esta categoría.'}
             </p>
           </div>
@@ -492,11 +526,7 @@ export default function Gastos() {
         {!isLoading && filtered.length > 0 && (
           <div className="space-y-2">
             {filtered.map(expense => (
-              <div
-                key={expense.id}
-                className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex items-start justify-between gap-4"
-              >
-                {/* Izquierda */}
+              <div key={expense.id} className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${CATEGORY_COLORS[expense.category] ?? 'bg-slate-100 text-slate-700'}`}>
@@ -505,6 +535,14 @@ export default function Gastos() {
                     {expense.subcategory && (
                       <span className="text-xs text-slate-500">{expense.subcategory}</span>
                     )}
+                    {/* Badge tipo */}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      expense.affectsCash
+                        ? 'bg-red-50 text-red-600'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {expense.affectsCash ? 'Caja' : 'General'}
+                    </span>
                     <span className="text-xs text-slate-400">&middot;</span>
                     <span className="text-xs text-slate-500">{methodLabel(expense.paymentMethod)}</span>
                   </div>
@@ -514,18 +552,17 @@ export default function Gastos() {
                   )}
                   <div className="flex items-center gap-3 mt-1">
                     <span className="text-xs text-slate-400">{formatTime(expense.registeredAt)}</span>
-                    {expense.registeredBy && (
-                      <span className="text-xs text-slate-400">por {expense.registeredBy}</span>
-                    )}
-                    {expense.reference && (
-                      <span className="text-xs text-slate-400">ref: {expense.reference}</span>
-                    )}
+                    {expense.registeredBy && <span className="text-xs text-slate-400">por {expense.registeredBy}</span>}
+                    {expense.reference && <span className="text-xs text-slate-400">ref: {expense.reference}</span>}
                   </div>
                 </div>
-
-                {/* Derecha: monto */}
                 <div className="text-right shrink-0">
-                  <p className="text-base font-semibold text-slate-800">{formatCOP(expense.amount)}</p>
+                  <p className={`text-base font-semibold ${expense.affectsCash ? 'text-slate-800' : 'text-slate-400'}`}>
+                    {formatCOP(expense.amount)}
+                  </p>
+                  {!expense.affectsCash && (
+                    <p className="text-xs text-slate-400">no afecta caja</p>
+                  )}
                 </div>
               </div>
             ))}
@@ -534,12 +571,8 @@ export default function Gastos() {
 
       </div>
 
-      {/* Modal */}
       {showModal && (
-        <NuevoGastoModal
-          onClose={() => setShowModal(false)}
-          onSaved={handleSaved}
-        />
+        <NuevoGastoModal onClose={() => setShowModal(false)} onSaved={() => queryClient.invalidateQueries({ queryKey: ['expenses', selectedDate] })} />
       )}
     </div>
   );

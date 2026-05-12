@@ -6,7 +6,7 @@ import { usePageTitle } from '../hooks/usePageTitle';
 
 
 export default function Login() {
-    usePageTitle('Login');
+  usePageTitle('Login');
   const navigate = useNavigate();
   const setUser = useAuthStore((s) => s.setUser);
 
@@ -16,22 +16,25 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
-  e.preventDefault();
-  setError('');
-  setLoading(true);
+    e.preventDefault();
+    setError('');
+    setLoading(true);
 
 
 
-  try {
-    const res = await client.post('/auth/login', { username, password });
-    setUser(res.data);
-    navigate('/');
-  } catch {
-    setError('Usuario o contraseña incorrectos.');
-  } finally {
-    setLoading(false);
+    try {
+      const res = await client.post('/auth/login', {
+        username: username.trim(),
+        password: password.trim(),
+      });
+      setUser(res.data);
+      navigate('/');
+    } catch {
+      setError('Usuario o contraseña incorrectos.');
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center">

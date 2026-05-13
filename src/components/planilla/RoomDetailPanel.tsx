@@ -58,6 +58,8 @@ interface ServiceCharge {
   addedAt: string;
   addedBy: string;
   serviceType: string;
+  paidImmediately: boolean;
+
 }
 
 interface TowelInventory {
@@ -199,19 +201,13 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
   const cobroExtraMutation = useMutation({
     mutationFn: () => {
-      if (cobroTipo === 'PAGO') {
-        return apiClient.post(`/reservations/${reservationId}/abono`, {
-          amount: cobroAmount,
-          method: cobroMethod,
-          notes: cobroDesc.trim() || 'Cobro extra',
-        }).then(r => r.data);
-      } else {
-        return apiClient.post(`/reservations/${reservationId}/charges/add`, {
-          description: cobroDesc.trim() || 'Cobro extra',
-          amount: cobroAmount,
-          serviceType: 'EXTRA',
-        }).then(r => r.data);
-      }
+      return apiClient.post(`/reservations/${reservationId}/charges/add`, {
+        description: cobroDesc.trim() || 'Cobro extra',
+        amount: cobroAmount,
+        serviceType: 'EXTRA',
+        paidImmediately: cobroTipo === 'PAGO' ? 'true' : 'false',
+        method: cobroTipo === 'PAGO' ? cobroMethod : undefined,
+      }).then(r => r.data);
     },
     onSuccess: () => {
       setCobroDone(true);
@@ -303,16 +299,17 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
   // ── Cálculos ──────────────────────────────────────────────────────────────
 
+
   const depositPagado = reservation?.depositAmount ?? 0;
   const totalEstimado = reservation?.estimatedTotal ?? 0;
-  const saldoPendiente = Math.max(0, totalEstimado - depositPagado);
   const totalConsumos = serviceCharges
     .filter(c => c.serviceType === 'VITRINA')
     .reduce((sum, c) => sum + c.totalPrice, 0);
-
   const totalExtras = serviceCharges
-    .filter(c => c.serviceType === 'EXTRA')
+    .filter(c => c.serviceType === 'EXTRA' && !c.paidImmediately)
     .reduce((sum, c) => sum + c.totalPrice, 0);
+  const saldoPendiente = Math.max(0, totalEstimado - depositPagado);
+
 
   const minExtendDate = reservation
     ? (() => {
@@ -493,25 +490,28 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                           <span className="text-sm font-medium text-amber-600">{fmt(totalConsumos)}</span>
                         </div>
                       )}
-                      {totalExtras > 0 && (
+                      {serviceCharges.filter(c => c.serviceType === 'EXTRA' && !c.paidImmediately).length > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-sm text-slate-500">Cobros extra</span>
-                          <span className="text-sm font-medium text-amber-600">{fmt(totalExtras)}</span>
-                        </div>
-                      )}
-
-                      {(totalConsumos + totalExtras) === 0 && (
-                        <div className="border-t border-slate-200 pt-2.5 flex justify-between">
-                          <span className="text-sm font-semibold text-slate-700">Saldo pendiente</span>
-                          <span className={`text-sm font-bold ${saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                            {saldoPendiente > 0 ? fmt(saldoPendiente) : 'Al día'}
+                          <span className="text-sm text-slate-500">Cobros extra (pendiente)</span>
+                          <span className="text-sm font-medium text-amber-600">
+                            {fmt(serviceCharges.filter(c => c.serviceType === 'EXTRA' && !c.paidImmediately).reduce((s, c) => s + c.totalPrice, 0))}
                           </span>
                         </div>
                       )}
+                      {serviceCharges.filter(c => c.serviceType === 'EXTRA' && c.paidImmediately).length > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-slate-500">Cobros extra (pagado)</span>
+                          <span className="text-sm font-medium text-emerald-600">
+                            {fmt(serviceCharges.filter(c => c.serviceType === 'EXTRA' && c.paidImmediately).reduce((s, c) => s + c.totalPrice, 0))}
+                          </span>
+                        </div>
+                      )}
+
+
                       <div className="border-t border-slate-200 pt-2.5 flex justify-between">
                         <span className="text-sm font-semibold text-slate-700">Saldo pendiente</span>
-                        <span className={`text-sm font-bold ${(saldoPendiente + totalConsumos) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                          {(saldoPendiente + totalConsumos) > 0 ? fmt(saldoPendiente + totalConsumos) : 'Al día'}
+                        <span className={`text-sm font-bold ${(saldoPendiente + totalConsumos + totalExtras) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {(saldoPendiente + totalConsumos + totalExtras) > 0 ? fmt(saldoPendiente + totalConsumos + totalExtras) : 'Al día'}
                         </span>
                       </div>
                     </div>
@@ -608,11 +608,15 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                             type="number"
                             value={vitrinaPayAmount}
                             onChange={e => { setVitrinaPayAmount(e.target.value); setVitrinaPayError(''); }}
-                            placeholder="0"
-                            min="1"
+                            placeholder="0" min="1" max={totalConsumos}
                             className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                           />
                         </div>
+                        {vitrinaPayAmount && Number(vitrinaPayAmount) > totalConsumos && (
+                          <p className="text-xs text-red-500 mt-1">
+                            El monto no puede superar el total de consumos ({fmt(totalConsumos)})
+                          </p>
+                        )}
                         {/* Atajo total */}
                         <button
                           onClick={() => setVitrinaPayAmount(String(Math.round(totalConsumos)))}
@@ -644,7 +648,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
                       <button
                         onClick={() => vitrinaPayMutation.mutate()}
-                        disabled={!vitrinaPayAmount || Number(vitrinaPayAmount) <= 0 || vitrinaPayMutation.isPending}
+                        disabled={!vitrinaPayAmount || Number(vitrinaPayAmount) <= 0 || Number(vitrinaPayAmount) > totalConsumos || vitrinaPayMutation.isPending}
                         className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
                       >
                         {vitrinaPayMutation.isPending
@@ -903,11 +907,11 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                   <span className="text-sm font-semibold text-slate-700">Saldo pendiente</span>
                   <span className={`text-sm font-bold ${abonoResult
                     ? (abonoResult.saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600')
-                    : (saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600')
+                    : ((saldoPendiente + totalExtras) > 0 ? 'text-amber-600' : 'text-emerald-600')
                     }`}>
                     {abonoResult
                       ? (abonoResult.saldoPendiente > 0 ? fmt(abonoResult.saldoPendiente) : 'Al día')
-                      : (saldoPendiente > 0 ? fmt(saldoPendiente) : 'Al día')}
+                      : ((saldoPendiente + totalExtras) > 0 ? fmt(saldoPendiente + totalExtras) : 'Al día')}
                   </span>
                 </div>
               </div>
@@ -939,6 +943,11 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                         className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                       />
                     </div>
+                    {abonoAmount && Number(abonoAmount) > (saldoPendiente + totalExtras) && (
+                      <p className="text-xs text-red-500 mt-1">
+                        El monto no puede superar el saldo pendiente ({fmt(saldoPendiente + totalExtras)})
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -976,7 +985,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                       <div className="flex justify-between">
                         <span className="text-sm text-slate-500">Saldo después del abono</span>
                         <span className="text-sm font-medium text-slate-700">
-                          {fmt(Math.max(0, saldoPendiente - Number(abonoAmount)))}
+                          {fmt(Math.max(0, saldoPendiente + totalExtras - Number(abonoAmount)))}
                         </span>
                       </div>
                       {abonoNotes.trim() && (
@@ -996,7 +1005,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
                   <button
                     onClick={() => abonoMutation.mutate()}
-                    disabled={!abonoAmount || Number(abonoAmount) <= 0 || abonoMutation.isPending}
+                    disabled={!abonoAmount || Number(abonoAmount) <= 0 || Number(abonoAmount) > (saldoPendiente + totalExtras) || abonoMutation.isPending}
                     className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
                   >
                     {abonoMutation.isPending ? 'Registrando...' : `Registrar abono de ${abonoAmount ? fmt(Number(abonoAmount)) : '...'}`}
@@ -1167,6 +1176,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                   />
                 </div>
+
               </div>
 
               {/* Método — solo si es pago directo */}
@@ -1221,7 +1231,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
         </div>
 
         {/* Footer */}
-        {reservation && room.status === 'OCCUPIED' && (
+        {reservation && room.status === 'OCCUPIED' && !room.rato && (
           <div className="border-t border-slate-200 px-6 py-4">
             <button
               onClick={() => onEntregar(reservation.id)}

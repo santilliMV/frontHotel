@@ -425,9 +425,17 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente,
                           <div className="grid grid-cols-4 gap-2">
                             {rooms.map(room => (
                               <button key={room.id} onClick={() => {
-                                console.log('Seleccionando habitación:', room.id, room.roomNumber);
                                 set('roomId', room.id);
                                 set('roomTypeId', room.roomTypeId);
+                                // Si la nueva habitación es Múltiple, ajustar occupantType
+                                const isMultiple = room.roomTypeName.toLowerCase().includes('múltiple') || room.roomTypeName.toLowerCase().includes('multiple');
+                                if (isMultiple && form.occupantType !== 'MULTIPLE_PERSON') {
+                                  set('occupantType', 'MULTIPLE_PERSON');
+                                  set('numberOfGuests', 3);
+                                } else if (!isMultiple && form.occupantType === 'MULTIPLE_PERSON') {
+                                  set('occupantType', 'PAREJA');
+                                  set('numberOfGuests', 2);
+                                }
                               }}
                                 className={`py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-colors
                         ${form.roomId === room.id

@@ -102,6 +102,8 @@ export default function CheckOut() {
     quantity: number;
     unitPrice: number;
     totalPrice: number;
+    paidImmediately: boolean;
+
   }
 
   const [serviceCharges, setServiceCharges] = useState<ServiceCharge[]>([]);
@@ -510,8 +512,9 @@ export default function CheckOut() {
               {serviceCharges.map(c => (
                 <BillingRow
                   key={c.id}
-                  label={c.quantity > 1 ? `${c.description} × ${c.quantity}` : c.description}
+                  label={`${c.quantity > 1 ? `${c.description} × ${c.quantity}` : c.description}${c.paidImmediately ? ' (pagado)' : ''}`}
                   value={fmtCOP(c.totalPrice)}
+                  paid={c.paidImmediately}
                 />
               ))}
               {(() => {
@@ -701,13 +704,13 @@ function InfoRow({ label, value, highlight }: { label: string; value: string; hi
   );
 }
 
-function BillingRow({ label, value, bold, negative, highlight }: {
-  label: string; value: string; bold?: boolean; negative?: boolean; highlight?: boolean;
+function BillingRow({ label, value, bold, negative, highlight, paid }: {
+  label: string; value: string; bold?: boolean; negative?: boolean; highlight?: boolean; paid?: boolean;
 }) {
   return (
     <div className="flex justify-between">
-      <span className={`text-slate-500 ${bold ? 'font-semibold text-slate-700' : ''}`}>{label}</span>
-      <span className={`${bold ? 'font-semibold' : ''} ${negative ? 'text-emerald-600' : ''} ${highlight ? 'text-slate-800 text-base' : 'text-slate-700'}`}>
+      <span className={`${paid ? 'text-slate-400' : 'text-slate-500'} ${bold ? 'font-semibold text-slate-700' : ''}`}>{label}</span>
+      <span className={`${bold ? 'font-semibold' : ''} ${negative ? 'text-emerald-600' : ''} ${highlight ? 'text-slate-800 text-base' : paid ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
         {value}
       </span>
     </div>

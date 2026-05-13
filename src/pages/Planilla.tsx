@@ -46,6 +46,8 @@ interface RoomByDate {
   rato?: boolean;
   checkedOut?: boolean;
   overdue?: boolean;
+  estimatedTotal?: number;
+  depositAmount?: number;
 }
 
 interface DailyObservation {
@@ -410,6 +412,7 @@ export default function Planilla() {
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-24">Entrada</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-24">Salida</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600 w-14">N.</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 w-28">Por noche</th>
               {/* La columna de acciones solo existe si no es historial */}
               {!isPast && (
                 <th className="text-left px-4 py-3 font-semibold text-slate-600 w-52">Acciones</th>
@@ -435,7 +438,7 @@ export default function Planilla() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={isPast ? 8 : 9} className="px-4 py-10 text-center text-slate-400 text-sm">
+                <td colSpan={isPast ? 9 : 10} className="px-4 py-10 text-center text-slate-400 text-sm">
                   {isPast
                     ? 'No hubo actividad en esa fecha.'
                     : 'No hay habitaciones con ese estado para esta fecha.'}
@@ -567,6 +570,10 @@ function RoomRow({
   const nights = isOccupied ? room.numberOfNights : undefined;
   const resNum = isOccupied ? room.reservationNumber : (isReserved ? room.preAssignedReservationNumber : '');
   const reservaId = isOccupied ? room.reservationId : (isReserved ? room.preAssignedReservationId : undefined);
+  const pricePerNight = (isOccupied && room.estimatedTotal != null && room.numberOfNights)
+    ? room.estimatedTotal / room.numberOfNights
+    : undefined;
+
 
   // ── Lógica aseo ──────────────────────────────────────────────────────────
   const todayStr = (() => {
@@ -619,8 +626,7 @@ function RoomRow({
 
   // ─────────────────────────────────────────────────────────────────────────
 
-  const colCount = isPast ? 8 : 9;
-
+  const colCount = isPast ? 9 : 10;
   return (
     <>
       <tr className={`transition-colors ${isEntregada
@@ -668,6 +674,8 @@ function RoomRow({
         <td className={`px-4 py-3 text-xs ${isEntregada ? 'text-slate-400' : 'text-slate-500'}`}>
           {nights ?? ''}
         </td>
+        <td className={`px-4 py-3 text-xs font-medium ${isEntregada ? 'text-slate-400' : 'text-emerald-700'}`}>
+          {pricePerNight != null ? '$' + Math.round(pricePerNight).toLocaleString('es-CO') : ''}        </td>
 
         {!isPast && (
           <td className="px-4 py-3">

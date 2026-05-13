@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { guestsApi } from '../api/hotel-api';
 import type { GuestResponse, GuestRequest } from '../api/hotel-api';
 import { COLOMBIA_CITIES, COUNTRIES, DOC_TYPES } from '../constants';
@@ -24,7 +24,7 @@ interface GuestHistoryEntry {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmt = (d: string | null) =>
-  d ? new Date(d).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  d ? new Date(d + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
 const fmtCOP = (n: number | null) =>
   n != null ? '$' + Math.round(n).toLocaleString('es-CO') : '—';
@@ -35,6 +35,13 @@ const emptyForm = (): GuestRequest => ({
   address: '', city: '', country: 'Colombia',
   occupation: '', vehiclePlate: '', observations: '',
 });
+
+/** Normaliza texto: minúsculas, sin tildes, sin espacios extra */
+const normalize = (s: string) =>
+  s.toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
 
 // ─── GuestForm ────────────────────────────────────────────────────────────────
 
@@ -49,7 +56,6 @@ function GuestForm({
 }) {
   const [form, setForm] = useState<GuestRequest>(initial);
 
-  // Fix bug: cuando cambia el initial (editar vs crear), resetear el form
   useEffect(() => {
     setForm(initial);
   }, [initial]);
@@ -221,21 +227,14 @@ function HistoryPanel({ guest, onClose }: { guest: GuestResponse; onClose: () =>
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl my-auto">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <div>
             <h2 className="text-base font-semibold text-slate-800">Historial de estancias</h2>
             <p className="text-xs text-slate-500 mt-0.5">{guest.fullName} · {guest.phone}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 text-xl leading-none"
-          >
-            ×
-          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
 
-        {/* Resumen */}
         {!loading && !error && history.length > 0 && (
           <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex gap-8 text-sm">
             <div>
@@ -255,65 +254,33 @@ function HistoryPanel({ guest, onClose }: { guest: GuestResponse; onClose: () =>
           </div>
         )}
 
-        {/* Body */}
         <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
-          {loading && (
-            <p className="text-sm text-slate-400 text-center py-8">Cargando historial...</p>
-          )}
-
-          {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
+          {loading && <p className="text-sm text-slate-400 text-center py-8">Cargando historial...</p>}
+          {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
           {!loading && !error && history.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-8">
-              Este huésped no tiene estadías registradas aún.
-            </p>
+            <p className="text-sm text-slate-400 text-center py-8">Este huésped no tiene estadías registradas aún.</p>
           )}
-
           {!loading && !error && history.map((h) => (
             <div key={h.id} className="border border-slate-200 rounded-xl px-4 py-3 text-sm">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  {h.roomNumber && (
-                    <span className="font-semibold text-slate-800">Hab. {h.roomNumber}</span>
-                  )}
+                  {h.roomNumber && <span className="font-semibold text-slate-800">Hab. {h.roomNumber}</span>}
                   {h.roomTypeName && (
-                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                      {h.roomTypeName}
-                    </span>
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">{h.roomTypeName}</span>
                   )}
                 </div>
-                <div className="text-right">
-                  {h.totalAmount != null && h.totalAmount > 0 ? (
-                    <span className="font-semibold text-slate-800">{fmtCOP(h.totalAmount)}</span>
-                  ) : null}
-                </div>
+                {h.totalAmount != null && h.totalAmount > 0 && (
+                  <span className="font-semibold text-slate-800">{fmtCOP(h.totalAmount)}</span>
+                )}
               </div>
-
               <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
-                <span>
-                  Entrada: {fmt(h.checkInDate)}
-                </span>
-                <span>
-                  Salida: {fmt(h.checkOutDate)}
-                </span>
-                {h.numberOfNights != null && (
-                  <span>{h.numberOfNights} noche{h.numberOfNights !== 1 ? 's' : ''}</span>
-                )}
-                {h.reservationNumber && (
-                  <span>{h.reservationNumber}</span>
-                )}
-                {h.paymentMethodSummary && (
-                  <span>{h.paymentMethodSummary}</span>
-                )}
+                <span>Entrada: {fmt(h.checkInDate)}</span>
+                <span>Salida: {fmt(h.checkOutDate)}</span>
+                {h.numberOfNights != null && <span>{h.numberOfNights} noche{h.numberOfNights !== 1 ? 's' : ''}</span>}
+                {h.reservationNumber && <span>{h.reservationNumber}</span>}
+                {h.paymentMethodSummary && <span>{h.paymentMethodSummary}</span>}
               </div>
-
-              {h.notes && (
-                <p className="mt-2 text-xs text-slate-400 italic">{h.notes}</p>
-              )}
+              {h.notes && <p className="mt-2 text-xs text-slate-400 italic">{h.notes}</p>}
             </div>
           ))}
         </div>
@@ -332,10 +299,8 @@ function GuestCard({ guest, onEdit, onHistory }: {
   const initials = (guest.firstName[0] + (guest.lastName?.[0] ?? '')).toUpperCase();
 
   return (
-    <div className={`bg-white rounded-xl border px-4 py-3.5 flex items-start gap-4 transition-colors hover:border-slate-300 ${guest.hasObservations ? 'border-red-200 bg-red-50/30' : 'border-slate-200'
-      }`}>
-      <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${guest.hasObservations ? 'bg-red-700' : 'bg-slate-800'
-        }`}>
+    <div className={`bg-white rounded-xl border px-4 py-3.5 flex items-start gap-4 transition-colors hover:border-slate-300 ${guest.hasObservations ? 'border-red-200 bg-red-50/30' : 'border-slate-200'}`}>
+      <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${guest.hasObservations ? 'bg-red-700' : 'bg-slate-800'}`}>
         {initials}
       </div>
 
@@ -343,28 +308,18 @@ function GuestCard({ guest, onEdit, onHistory }: {
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <span className="text-sm font-semibold text-slate-800">{guest.fullName}</span>
           {guest.hasObservations && (
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
-              Obs.
-            </span>
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">Obs.</span>
           )}
           {guest.autoCreated && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
-              Auto
-            </span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Auto</span>
           )}
         </div>
 
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
           <span>{guest.phone}</span>
-          {guest.documentNumber && (
-            <span>{guest.documentType} {guest.documentNumber}</span>
-          )}
-          {guest.city && (
-            <span>{guest.city}{guest.country && guest.country !== 'Colombia' ? `, ${guest.country}` : ''}</span>
-          )}
-          {guest.lastStayDate && (
-            <span>Última visita: {fmt(guest.lastStayDate)}</span>
-          )}
+          {guest.documentNumber && <span>{guest.documentType} {guest.documentNumber}</span>}
+          {guest.city && <span>{guest.city}{guest.country && guest.country !== 'Colombia' ? `, ${guest.country}` : ''}</span>}
+          {guest.lastStayDate && <span>Última visita: {fmt(guest.lastStayDate)}</span>}
         </div>
 
         {guest.hasObservations && guest.observations && (
@@ -400,7 +355,7 @@ export default function Huespedes() {
   usePageTitle('Huespedes');
 
   const [query, setQuery] = useState('');
-  const [guests, setGuests] = useState<GuestResponse[]>([]);
+  const [allGuests, setAllGuests] = useState<GuestResponse[]>([]);  // fuente de verdad, nunca se toca
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState<Modal>('none');
   const [editing, setEditing] = useState<GuestResponse | null>(null);
@@ -408,40 +363,47 @@ export default function Huespedes() {
   const [formError, setFormError] = useState('');
   const [toast, setToast] = useState('');
   const [historyGuest, setHistoryGuest] = useState<GuestResponse | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Carga única al montar ──────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
-    try { setGuests(await guestsApi.findAll()); }
-    catch { setGuests([]); }
-    finally { setLoading(false); }
+    try {
+      const data = await guestsApi.findAll();
+      setAllGuests(data);
+    } catch {
+      setAllGuests([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim()) { loadAll(); return; }
-    debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      const normalizedQuery = query.trim().replace(/\s+/g, ' ');
-      try { setGuests(await guestsApi.search(normalizedQuery)); }
-      catch { setGuests([]); }
-      finally { setLoading(false); }
-    }, 350);
-  }, [query, loadAll]);
+  // ── Filtro local en memoria — instantáneo, sin red ────────────────────────
+  const guests = useMemo(() => {
+    const q = normalize(query);
+    if (!q) return allGuests;
 
-  const openCreate = () => {
-    setEditing(null);
-    setFormError('');
-    setModal('create');
-  };
+    return allGuests.filter((g) => {
+      const fullName = normalize(g.fullName ?? '');
+      const phone = (g.phone ?? '').replace(/\s/g, '');
+      const doc = normalize(g.documentNumber ?? '');
+      const city = normalize(g.city ?? '');
 
-  const openEdit = (g: GuestResponse) => {
-    setEditing(g);
-    setFormError('');
-    setModal('edit');
-  };
+      // Soporta búsqueda multi-palabra: "juan pe" matchea "Juan Pérez"
+      const words = q.split(/\s+/).filter(Boolean);
+      return words.every(w =>
+        fullName.includes(w) ||
+        phone.includes(w) ||
+        doc.includes(w) ||
+        city.includes(w)
+      );
+    });
+  }, [allGuests, query]);
+
+  // ── Acciones ──────────────────────────────────────────────────────────────
+  const openCreate = () => { setEditing(null); setFormError(''); setModal('create'); };
+  const openEdit = (g: GuestResponse) => { setEditing(g); setFormError(''); setModal('edit'); };
 
   const handleSave = async (data: GuestRequest) => {
     setSaving(true); setFormError('');
@@ -454,7 +416,7 @@ export default function Huespedes() {
         setToast('Huésped registrado');
       }
       setModal('none');
-      loadAll();
+      await loadAll(); // recarga la fuente de verdad
       setTimeout(() => setToast(''), 3000);
     } catch (e: any) {
       setFormError(e?.response?.data?.message || 'Error al guardar');
@@ -490,7 +452,9 @@ export default function Huespedes() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-slate-800">Huéspedes</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Registro y consulta de clientes</p>
+            <p className="text-sm text-slate-500 mt-0.5">
+              {loading ? 'Cargando...' : `${allGuests.length} registrados`}
+            </p>
           </div>
           <button
             onClick={openCreate}
@@ -501,12 +465,33 @@ export default function Huespedes() {
           </button>
         </div>
 
-        <input
-          className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400"
-          placeholder="Buscar por nombre, teléfono o documento..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        {/* Buscador */}
+        <div className="relative">
+          <input
+            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            placeholder="Buscar por nombre, teléfono o documento..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoComplete="off"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-lg leading-none"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        {/* Indicador de resultados filtrados */}
+        {query && !loading && (
+          <p className="text-xs text-slate-400 -mt-2">
+            {guests.length === 0
+              ? `Sin resultados para "${query}"`
+              : `${guests.length} resultado${guests.length !== 1 ? 's' : ''} para "${query}"`}
+          </p>
+        )}
 
         {loading && (
           <div className="text-center py-12 text-slate-400 text-sm">Cargando huéspedes...</div>
@@ -517,12 +502,14 @@ export default function Huespedes() {
             <p className="text-slate-400 text-sm mb-4">
               {query ? `No se encontraron huéspedes para "${query}".` : 'No hay huéspedes registrados.'}
             </p>
-            <button
-              onClick={openCreate}
-              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              + Registrar huésped
-            </button>
+            {!query && (
+              <button
+                onClick={openCreate}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                + Registrar huésped
+              </button>
+            )}
           </div>
         )}
 
@@ -570,15 +557,9 @@ export default function Huespedes() {
               <h2 className="text-base font-semibold text-slate-800">
                 {modal === 'create' ? 'Nuevo huésped' : `Editar: ${editing?.fullName}`}
               </h2>
-              <button
-                onClick={() => setModal('none')}
-                className="text-slate-400 hover:text-slate-600 text-xl leading-none"
-              >
-                ×
-              </button>
+              <button onClick={() => setModal('none')} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
             </div>
             <div className="px-6 py-5">
-              {/* key fuerza re-mount del form cuando cambia el huésped editado */}
               <GuestForm
                 key={editing?.id ?? 'create'}
                 initial={initialForm()}
@@ -594,10 +575,7 @@ export default function Huespedes() {
 
       {/* Panel historial */}
       {historyGuest && (
-        <HistoryPanel
-          guest={historyGuest}
-          onClose={() => setHistoryGuest(null)}
-        />
+        <HistoryPanel guest={historyGuest} onClose={() => setHistoryGuest(null)} />
       )}
 
       {/* Toast */}

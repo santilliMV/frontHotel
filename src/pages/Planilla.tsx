@@ -145,6 +145,8 @@ export default function Planilla() {
   const [reservaCambio, setReservaCambio] = useState<ReservationResponse | null>(null);
   const [showMaintenanceAlert, setShowMaintenanceAlert] = useState(false);
   const [detailRoom, setDetailRoom] = useState<RoomByDate | null>(null);
+  const [lastReservationId, setLastReservationId] = useState<Record<string, string>>({});
+
 
   const dateStr = toDateStr(currentDate);
   const todayStr = toDateStr(todayDate);
@@ -210,7 +212,14 @@ export default function Planilla() {
     mutationFn: async ({ roomId, status }: { roomId: string; status: string }) => {
       await updateRoomStatus(roomId, status);
       if (status === 'AVAILABLE') {
-        await apiClient.post(`/towels/room-clean/${roomId}`);
+        // Obtener el reservationId directamente del backend
+        let reservationId: string | undefined;
+        try {
+          const res = await apiClient.get(`/towels/last-reservation/${roomId}`);
+          reservationId = res.data?.reservationId;
+        } catch { /* silencioso */ }
+        const params = reservationId ? `?reservationId=${reservationId}` : '';
+        await apiClient.post(`/towels/room-clean/${roomId}${params}`);
       }
     },
     onSuccess: () => {
@@ -465,6 +474,21 @@ export default function Planilla() {
               <button
                 onClick={() => {
                   if (statusMutation.isPending) return;
+                  const nextStatus = selectedRoom.status === 'OCCUPIED' ? 'DIRTY' : 'AVAILABLE';
+
+                  // Guardar en variable local para uso inmediato
+                  let reservationIdToUse = selectedRoom.reservationId;
+
+                  if (nextStatus === 'DIRTY' && selectedRoom.reservationId) {
+                    // Guardar en estado para el próximo clic (cuando sea AVAILABLE)
+                    setLastReservationId(prev => ({ ...prev, [selectedRoom.id]: selectedRoom.reservationId! }));
+                  }
+
+                  if (nextStatus === 'AVAILABLE') {
+                    // Usar el del estado (guardado en clic anterior)
+                    reservationIdToUse = lastReservationId[selectedRoom.id] ?? selectedRoom.reservationId;
+                  }
+
                   statusMutation.mutate({
                     roomId: selectedRoom.id,
                     status: selectedRoom.status === 'OCCUPIED' ? 'DIRTY' : 'AVAILABLE',
@@ -608,7 +632,8 @@ function RoomRow({
     if (!room.reservationId || !room.id) return;
     setAseoLoading(true);
     const towelsToDeliver = room.numberOfGuests ?? 1;
-    const towelsToReturn = towelsToDeliver; // en aseo siempre se recogen las mismas que se entregan
+    // Recoger todas las que hay en la habitación actualmente, no solo las del número de huéspedes
+    const towelsToReturn = roomTowels?.currentInRoom ?? towelsToDeliver;
     try {
       await apiClient.post(
         `/towels/nightly-change?reservationId=${room.reservationId}&roomId=${room.id}&towelsReturned=${towelsToReturn}&towelsDelivered=${towelsToDeliver}&nightNumber=0`
@@ -761,11 +786,10 @@ function RoomRow({
               <p className="text-sm text-slate-700">
                 <span className="font-medium">Hab. {room.roomNumber}</span> —
                 ¿El huésped aceptó el aseo?
-                {room.numberOfGuests && (
-                  <span className="text-slate-500 ml-1">
-                    (se repondrán {room.numberOfGuests} toalla{room.numberOfGuests !== 1 ? 's' : ''})
-                  </span>
-                )}
+                <span className="text-slate-500 ml-1">
+                  (se recogen {roomTowels?.currentInRoom ?? room.numberOfGuests ?? 1} sucia{(roomTowels?.currentInRoom ?? 1) !== 1 ? 's' : ''},
+                  {' '}se reponen {room.numberOfGuests ?? 1} limpia{(room.numberOfGuests ?? 1) !== 1 ? 's' : ''})
+                </span>
               </p>
               <button
                 onClick={handleAseoSi}

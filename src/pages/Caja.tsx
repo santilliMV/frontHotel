@@ -280,15 +280,12 @@ export default function Caja() {
     refetchInterval: viewingToday ? 60000 : false,
   });
 
-  const discrepanciesFromOtherDays = unresolvedDiscrepancies.filter(
-    s => s.date !== selectedDate
-  );
-
-  const netDiscrepancy = discrepanciesFromOtherDays.reduce(
+  // Todos los descuadres no resueltos (cualquier día, incluyendo hoy)
+  const netDiscrepancy = unresolvedDiscrepancies.reduce(
     (sum, s) => sum + (s.discrepancy ?? 0), 0
   );
-
-  const showDiscrepancyBanner = netDiscrepancy < 0;
+  // Mostrar banner si hay descuadres pendientes (faltante o sobrante)
+  const showDiscrepancyBanner = unresolvedDiscrepancies.length > 0;
 
   const { data: caja, isLoading } = useQuery<DailyCashFlow>({
     queryKey: ['cash-date', selectedDate],
@@ -378,49 +375,87 @@ export default function Caja() {
   };
   function DiscrepancyBanner({
     discrepancies,
+    netDiscrepancy,
     isAdmin,
     onResolve,
   }: {
     discrepancies: Shift[];
+    netDiscrepancy: number;
     isAdmin: boolean;
     onResolve: (s: Shift) => void;
   }) {
     const [expanded, setExpanded] = useState(false);
-    const total = discrepancies.reduce((s, d) => s + (d.discrepancy ?? 0), 0);
-    const faltaTotal = total < 0;
+    const falta = netDiscrepancy < 0;
+    const sobra = netDiscrepancy > 0;
+    const compensado = netDiscrepancy === 0 && discrepancies.length > 0;
 
     return (
-      <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">
+      <div className={`rounded-xl overflow-hidden border ${compensado
+          ? 'bg-amber-50 border-amber-200'
+          : falta
+            ? 'bg-red-50 border-red-200'
+            : 'bg-amber-50 border-amber-200'
+        }`}>
         <button
           onClick={() => setExpanded(e => !e)}
-          className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-red-100 transition-colors"
+          className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-black/5 transition-colors"
         >
           <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-            <p className="text-sm font-semibold text-red-800">
-              {discrepancies.length} descuadre{discrepancies.length !== 1 ? 's' : ''} pendiente{discrepancies.length !== 1 ? 's' : ''} de resolver
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${compensado ? 'bg-amber-500' : falta ? 'bg-red-500' : 'bg-amber-500'
+              }`} />
+            <p className={`text-sm font-semibold ${compensado ? 'text-amber-800' : falta ? 'text-red-800' : 'text-amber-800'
+              }`}>
+              {discrepancies.length} descuadre{discrepancies.length !== 1 ? 's' : ''} pendiente{discrepancies.length !== 1 ? 's' : ''}
             </p>
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${faltaTotal ? 'bg-red-200 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-              {faltaTotal ? 'Faltan' : 'Sobran'} {fmtCOP(Math.abs(total))} en total
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${compensado
+                ? 'bg-amber-100 text-amber-700'
+                : falta
+                  ? 'bg-red-200 text-red-700'
+                  : 'bg-amber-100 text-amber-700'
+              }`}>
+              {compensado
+                ? 'Se compensan entre sí'
+                : falta
+                  ? `Faltan ${fmtCOP(Math.abs(netDiscrepancy))} neto`
+                  : `Sobran ${fmtCOP(Math.abs(netDiscrepancy))} neto`}
             </span>
           </div>
-          <span className="text-red-400 text-xs">{expanded ? '▲ Ocultar' : '▼ Ver detalle'}</span>
+          <span className={`text-xs ${falta ? 'text-red-400' : 'text-amber-400'}`}>
+            {expanded ? '▲ Ocultar' : '▼ Ver detalle'}
+          </span>
         </button>
 
         {expanded && (
-          <div className="border-t border-red-200">
-            <div className="max-h-64 overflow-y-auto divide-y divide-red-100">
+          <div className="border-t border-current/10">
+            {/* Resumen neto si hay múltiples turnos */}
+            {discrepancies.length > 1 && (
+              <div className={`px-5 py-2.5 flex items-center justify-between text-xs font-medium border-b ${compensado
+                  ? 'bg-amber-100 border-amber-200 text-amber-800'
+                  : falta
+                    ? 'bg-red-100 border-red-200 text-red-800'
+                    : 'bg-amber-100 border-amber-200 text-amber-800'
+                }`}>
+                <span>Neto acumulado ({discrepancies.length} turnos)</span>
+                <span className="font-bold">
+                  {compensado
+                    ? 'Se compensan exactamente'
+                    : `${falta ? '−' : '+'} ${fmtCOP(Math.abs(netDiscrepancy))}`}
+                </span>
+              </div>
+            )}
+
+            <div className="max-h-64 overflow-y-auto divide-y divide-current/10 bg-white">
               {discrepancies.map(s => {
                 const disc = s.discrepancy ?? 0;
-                const falta = disc < 0;
+                const esFalta = disc < 0;
                 return (
-                  <div key={s.id} className="px-5 py-3 flex items-center justify-between bg-white hover:bg-red-50 transition-colors">
+                  <div key={s.id} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
                     <div className="flex items-center gap-4 min-w-0">
                       <div className="flex-shrink-0">
-                        <p className={`text-sm font-semibold ${falta ? 'text-red-700' : 'text-amber-700'}`}>
-                          {falta ? '−' : '+'} {fmtCOP(Math.abs(disc))}
+                        <p className={`text-sm font-semibold ${esFalta ? 'text-red-700' : 'text-amber-700'}`}>
+                          {esFalta ? '−' : '+'} {fmtCOP(Math.abs(disc))}
                         </p>
-                        <p className="text-xs text-slate-400">{falta ? 'Faltaron' : 'Sobraron'}</p>
+                        <p className="text-xs text-slate-400">{esFalta ? 'Faltaron' : 'Sobraron'}</p>
                       </div>
                       <div className="w-px h-8 bg-slate-100 flex-shrink-0" />
                       <div className="min-w-0">
@@ -439,7 +474,7 @@ export default function Caja() {
                     {isAdmin && (
                       <button
                         onClick={e => { e.stopPropagation(); onResolve(s); }}
-                        className="ml-3 px-3 py-1.5 text-xs font-medium border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex-shrink-0"
+                        className="ml-3 px-3 py-1.5 text-xs font-medium border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors flex-shrink-0"
                       >
                         Resolver
                       </button>
@@ -481,7 +516,8 @@ export default function Caja() {
 
         {showDiscrepancyBanner && (
           <DiscrepancyBanner
-            discrepancies={discrepanciesFromOtherDays.filter(s => (s.discrepancy ?? 0) < 0)}
+            discrepancies={unresolvedDiscrepancies}
+            netDiscrepancy={netDiscrepancy}
             isAdmin={isAdmin}
             onResolve={setResolveModal}
           />
@@ -995,7 +1031,7 @@ export default function Caja() {
               <div className="px-5 py-8 text-center text-slate-400 text-sm">No hay transacciones registradas.</div>
             ) : (
               <div>
-                {txGroups.map((group, gi) => (
+                {txGroups.reverse().map((group, gi) => (
                   <div key={gi}>
                     {/* Encabezado de turno */}
                     <div className="px-5 py-2.5 bg-slate-50 border-y border-slate-100 flex items-center justify-between">

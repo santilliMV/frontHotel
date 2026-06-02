@@ -91,10 +91,10 @@ function RoomOption({ r, selectedRoomId, onSelect }: {
     <div
       onClick={() => onSelect(r.id)}
       className={`flex items-center justify-between border-2 rounded-xl px-4 py-3 cursor-pointer transition-all ${selectedRoomId === r.id
-          ? 'border-slate-800 bg-slate-50'
-          : r.status === 'RESERVED'
-            ? 'border-purple-200 hover:border-purple-400'
-            : 'border-slate-200 hover:border-slate-400'
+        ? 'border-slate-800 bg-slate-50'
+        : r.status === 'RESERVED'
+          ? 'border-purple-200 hover:border-purple-400'
+          : 'border-slate-200 hover:border-slate-400'
         }`}
     >
       <div>
@@ -636,8 +636,7 @@ export default function CheckIn() {
   const totalFinal = subtotal + ivaAmount;
   const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   const hasPaidSomething = totalPaid > 0;
-  const overLimit = !isCourtesy && totalFinal > 0 && totalPaid > totalFinal;
-
+  const overLimit = !isCourtesy && !!priceData && totalFinal > 0 && totalPaid > totalFinal;
   const nights = nightCount(checkInDate, checkOutDate);
 
   const addPaymentLine = () => setPayments(p => [...p, { method: 'CASH', amount: '' }]);

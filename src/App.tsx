@@ -16,17 +16,12 @@ import Toallas from './pages/Toallas';
 import Vitrina from './pages/Vitrina';
 import Observaciones from './pages/Observaciones';
 import Empleados from './pages/Empleados';
+import AdminPrecios from './pages/AdminPrecios';
+import AdminAuditoria from './pages/AdminAuditoria';
+import AdminFinanzas from "./pages/AdminFinanzas";
+import MetodosPago from "./pages/MetodosPago";
 
 const queryClient = new QueryClient();
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="p-8">
-      <h2 className="text-xl font-semibold text-slate-700">{title}</h2>
-      <p className="text-slate-500 mt-1 text-sm">Modulo en construccion.</p>
-    </div>
-  );
-}
 
 export default function App() {
   return (
@@ -55,10 +50,11 @@ export default function App() {
             <Route path="/gastos" element={<Gastos />} />
             <Route path="/huespedes" element={<Huespedes />} />
             <Route path="/observaciones" element={<Observaciones />} />
-            <Route path="admin/precios" element={<Placeholder title="Precios" />} />
-            <Route path="admin/cortesias" element={<Placeholder title="Cortesias" />} />
-            <Route path="admin/auditoria" element={<Placeholder title="Auditoria" />} />
             <Route path="admin/empleados" element={<Empleados />} />
+            <Route path="admin/precios" element={<AdminPrecios />} />
+            <Route path="admin/auditoria" element={<AdminAuditoria />} />
+            <Route path="/admin/finanzas" element={<AdminFinanzas />} />
+            <Route path="/metodos-pago" element={<MetodosPago />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

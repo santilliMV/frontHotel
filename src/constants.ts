@@ -146,15 +146,6 @@ export const COUNTRIES = [
   'Otro',
 ];
 
-export const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  CASH:          'Efectivo',
-  CARD:          'Tarjeta',
-  TRANSFER:      'Transferencia',
-  QR:            'QR',
-  NEQUI_SALOMON: 'Nequi Salomón',
-  NEQUI_BRAYAN:  'Nequi Brayan',
-};
-
 export const DOC_TYPES = [
   { value: 'CC',        label: 'Cédula de ciudadanía (CC)' },
   { value: 'TI',        label: 'Tarjeta de identidad (TI)' },
@@ -171,11 +162,6 @@ export const DOC_TYPES_SHORT = [
   { value: 'PASAPORTE', label: 'Pasaporte' },
 ] as const;
 
-export const PAYMENT_METHODS = [
-  { value: 'CASH',          label: 'Efectivo' },
-  { value: 'CARD',          label: 'Tarjeta' },
-  { value: 'TRANSFER',      label: 'Transferencia' },
-  { value: 'QR',            label: 'QR' },
-  { value: 'NEQUI_SALOMON', label: 'Nequi Salomón' },
-  { value: 'NEQUI_BRAYAN',  label: 'Nequi Brayan' },
-] as const;
+// PAYMENT_METHODS y PAYMENT_METHOD_LABELS eliminados.
+// Usar el hook usePaymentMethods() en su lugar:
+//   const { options, getLabel } = usePaymentMethods();

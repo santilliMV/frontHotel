@@ -16,13 +16,14 @@ const navItems = [
   { path: '/gastos', label: 'Gastos' },
   { path: '/huespedes', label: 'Huespedes' },
   { path: '/observaciones', label: 'Observaciones' },
+  { path: '/metodos-pago', label: 'Metodos de pago' },
 ];
 
 const adminItems = [
   { path: '/admin/empleados', label: 'Empleados' },
   { path: '/admin/precios', label: 'Precios' },
-  { path: '/admin/cortesias', label: 'Cortesias' },
   { path: '/admin/auditoria', label: 'Auditoria' },
+  { path: '/admin/finanzas', label: 'Finanzas' },
 ];
 
 const fmtCOP = (n: number) => '$' + Math.round(n).toLocaleString('es-CO');
@@ -54,7 +55,6 @@ function AbrirTurnoModal({ username, onSuccess }: {
   const [loadingExpected, setLoadingExpected] = useState(true);
 
   useEffect(() => {
-    // Usa el último turno cerrado (sin importar la fecha) para sugerir el monto base
     const fetchExpected = async () => {
       try {
         const r = await apiClient.get('/shifts/last-closed');
@@ -63,7 +63,6 @@ function AbrirTurnoModal({ username, onSuccess }: {
           setAmount(String(Math.round(r.data.actualCashAmount)));
         }
       } catch {
-        // 404 = no hay turno cerrado previo (primer turno del sistema)
         setExpected(null);
       } finally {
         setLoadingExpected(false);
@@ -78,10 +77,7 @@ function AbrirTurnoModal({ username, onSuccess }: {
     setError('');
     try {
       const r = await apiClient.post('/shifts/open', { baseAmount: parseFloat(amount) });
-
-      // Abrir/actualizar la caja con el mismo monto — nunca falla
       await apiClient.post('/cash/open', { baseAmount: parseFloat(amount) });
-
       onSuccess(r.data);
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Error al abrir el turno');
@@ -297,7 +293,6 @@ export default function Layout() {
   const [showShiftToast, setShowShiftToast] = useState(false);
 
   useEffect(() => {
-    // Admin nunca necesita turno
     if (isAdmin) {
       setShiftChecked(true);
       return;
@@ -305,20 +300,14 @@ export default function Layout() {
 
     const checkShift = async () => {
       try {
-        // Buscar turno activo global (sin filtro de fecha ni usuario)
         const r = await apiClient.get('/shifts/active');
         const shift: Shift = r.data;
-
         if (shift.openedBy === user?.username) {
-          // Es mi turno (puede ser de ayer u hoy) — lo retomo
           setActiveShift(shift);
         } else {
-          // Hay un turno activo de otro recepcionista
-          // No bloqueamos — simplemente no asignamos turno propio
           setActiveShift(null);
         }
       } catch {
-        // 404 = no hay ningún turno activo → pedir abrir uno
         setShowOpenShift(true);
       } finally {
         setShiftChecked(true);
@@ -337,7 +326,6 @@ export default function Layout() {
 
   const handleLogout = () => {
     if (!isAdmin && activeShift) {
-      // Recepcionista con turno abierto → pedir cierre antes de salir
       setShowCloseShift(true);
     } else {
       logout();

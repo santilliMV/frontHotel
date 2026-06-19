@@ -5,9 +5,10 @@ import type {
   GuestResponse, GuestRequest, CheckInResponse,
   AvailableRoom, RoomTypeOption, CompanionRequest, PriceResponse,
 } from '../api/hotel-api';
-import { COLOMBIA_CITIES, COUNTRIES, DOC_TYPES, DOC_TYPES_SHORT, PAYMENT_METHODS } from '../constants';
 import apiClient from '../api/client';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { usePaymentMethods } from '../hooks/usePaymentMethods';
+import { DOC_TYPES, DOC_TYPES_SHORT, COUNTRIES, COLOMBIA_CITIES } from '../constants';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -301,8 +302,13 @@ function EarlyModal({ onSelect, onCancel }: {
 
 // ─── SuccessScreen ────────────────────────────────────────────────────────────
 
-function SuccessScreen({ result, payments, totalPaid, isCourtesy, onReset }: {
-  result: CheckInResponse; payments: PaymentEntry[]; totalPaid: number; isCourtesy: boolean; onReset: () => void;
+function SuccessScreen({ result, payments, totalPaid, isCourtesy, getMethodLabel, onReset }: {
+  result: CheckInResponse;
+  payments: PaymentEntry[];
+  totalPaid: number;
+  isCourtesy: boolean;
+  getMethodLabel: (method: string) => string;
+  onReset: () => void;
 }) {
   const validPayments = payments.filter(p => parseFloat(p.amount) > 0);
   return (
@@ -332,7 +338,7 @@ function SuccessScreen({ result, payments, totalPaid, isCourtesy, onReset }: {
           <div className="border-t border-slate-200 mt-3 pt-3 space-y-2">
             {validPayments.map((p, i) => (
               <div key={i} className="flex justify-between">
-                <span className="text-xs text-slate-500">{PAYMENT_METHODS.find(m => m.value === p.method)?.label}</span>
+                <span className="text-xs text-slate-500">{getMethodLabel(p.method)}</span>
                 <span className="text-sm font-medium text-emerald-600">{fmtCOP(parseFloat(p.amount))}</span>
               </div>
             ))}
@@ -500,6 +506,9 @@ export default function CheckIn() {
   const existingReservationId: string | null = (location.state as any)?.reservationId ?? null;
   const fromPlanilla = !!prefill?.roomId;
 
+  // ─── Payment methods dinámicos ────────────────────────────────────────────
+  const { options: paymentMethods, getLabel: getMethodLabel } = usePaymentMethods();
+
   const [step, setStep] = useState<Step>('guest');
 
   // Guest
@@ -553,6 +562,16 @@ export default function CheckIn() {
   const prefillRoomIdRef = useRef<string | undefined>(prefill?.roomId);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sincronizar default del primer método de pago cuando cargan las opciones (solo una vez)
+  const paymentMethodsSyncedRef = useRef(false);
+  useEffect(() => {
+    if (paymentMethods.length > 0 && !paymentMethodsSyncedRef.current) {
+      paymentMethodsSyncedRef.current = true;
+      const defaultMethod = paymentMethods[0].value;
+      setPayments(prev => prev.map((p, i) => i === 0 ? { ...p, method: defaultMethod } : p));
+    }
+  }, [paymentMethods]);
 
   useEffect(() => { roomsApi.getTypes().then(setRoomTypes).catch(() => { }); }, []);
 
@@ -639,7 +658,7 @@ export default function CheckIn() {
   const overLimit = !isCourtesy && !!priceData && totalFinal > 0 && totalPaid > totalFinal;
   const nights = nightCount(checkInDate, checkOutDate);
 
-  const addPaymentLine = () => setPayments(p => [...p, { method: 'CASH', amount: '' }]);
+  const addPaymentLine = () => setPayments(p => [...p, { method: paymentMethods[0]?.value ?? 'CASH', amount: '' }]);
   const removePaymentLine = (i: number) => setPayments(p => p.filter((_, idx) => idx !== i));
   const updatePayment = (i: number, key: 'method' | 'amount', val: string) =>
     setPayments(p => p.map((x, idx) => idx === i ? { ...x, [key]: val } : x));
@@ -731,7 +750,7 @@ export default function CheckIn() {
     setOverrideRoomTypeId(null);
     setCheckInDate(today()); setCheckOutDate(tomorrow());
     setNumberOfGuests(1); setOccupantType('INDIVIDUAL'); setTowels(1);
-    setCompanions([]); setPayments([{ method: 'CASH', amount: '' }]);
+    setCompanions([]); setPayments([{ method: paymentMethods[0]?.value ?? 'CASH', amount: '' }]);
     setPriceData(null); setEarlyOption(null); setSubmitError(''); setResult(null);
     setElectronicInvoice(false); setDiscountAmount(''); setDiscountReason('');
     setDiscountApproved(false); setAdditionalCharge(''); setAdditionalChargeReason('');
@@ -1238,7 +1257,7 @@ export default function CheckIn() {
                 <div key={i} className="grid grid-cols-2 gap-3 mb-3 items-end">
                   <div><label className={fl}>Método de pago</label>
                     <select className={fi} value={p.method} onChange={e => updatePayment(i, 'method', e.target.value)}>
-                      {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
                   </div>
                   <div className="flex gap-2 items-end">
@@ -1419,7 +1438,14 @@ export default function CheckIn() {
       {/* ── PASO 6: Éxito ───────────────────────────────────────────────────── */}
       {step === 'success' && result && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <SuccessScreen result={result} payments={payments} totalPaid={totalPaid} isCourtesy={isCourtesy} onReset={handleReset} />
+          <SuccessScreen
+            result={result}
+            payments={payments}
+            totalPaid={totalPaid}
+            isCourtesy={isCourtesy}
+            getMethodLabel={getMethodLabel}
+            onReset={handleReset}
+          />
         </div>
       )}
 

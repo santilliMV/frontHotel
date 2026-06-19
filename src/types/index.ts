@@ -11,13 +11,12 @@ export type ReservationStatus =
 
 export type OccupantType = 'INDIVIDUAL' | 'PAREJA' | 'MULTIPLE_PERSON';
 
-export type PaymentMethod =
-  | 'CASH'
-  | 'CARD'
-  | 'TRANSFER'
-  | 'QR'
-  | 'NEQUI_SALOMON'
-  | 'NEQUI_BRAYAN';
+/**
+ * Código del método de pago. Ya no es un union type fijo —
+ * los valores vienen dinámicamente desde la tabla payment_methods en BD.
+ * Ejemplos: "CASH", "CARD", "NEQUI_SALOMON", o cualquier código que cree el admin.
+ */
+export type PaymentMethod = string;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -68,58 +67,43 @@ export interface ReservationCompanion {
   phone: string | null;
 }
 
-/**
- * Respuesta plana del backend — campos alineados con ReservationResponse.java
- */
 export interface ReservationResponse {
   id: string;
   reservationNumber: string;
 
-  // Huésped
   guestId: string;
   guestName: string;
   guestPhone: string;
-  guestHasObservations: boolean;   // true si guest.observations != null/blank
+  guestHasObservations: boolean;
 
-  // Habitación (tipo, no específica)
   roomTypeId: string;
   roomTypeName: string;
 
-  // Fechas
-  checkInDate: string;             // LocalDate → "2024-04-15"
+  checkInDate: string;
   checkOutDate: string;
   numberOfNights: number;
   numberOfGuests: number;
   occupantType: OccupantType;
   approximateArrivalTime: string | null;
 
-  // Estado
   status: ReservationStatus;
-  statusLabel: string;             // "Pendiente" | "Confirmada" | "En hotel" | "Salió" | "Cancelada"
+  statusLabel: string;
 
-  // Económico
   depositAmount: number | null;
   depositPaid: boolean | null;
   estimatedTotal: number | null;
 
-  // Extras
   specialRequests: string | null;
   notes: string | null;
   createdBy: string | null;
-  createdAt: string | null;        // LocalDateTime → ISO string
+  createdAt: string | null;
 
-  // Acompañantes
   companions: ReservationCompanion[];
 
-  // ── Campos opcionales que añade RoomService (planilla by-date) ──
-  roomId?: string;                 // habitación pre-asignada (si la hay)
-  roomNumber?: string;             // número de habitación pre-asignada
+  roomId?: string;
+  roomNumber?: string;
 }
 
-/**
- * Tipo legacy para el modelo anidado (entidad Reservation directa).
- * Usar ReservationResponse para todo lo que venga de la API.
- */
 export interface Reservation {
   id: string;
   reservationNumber: string;

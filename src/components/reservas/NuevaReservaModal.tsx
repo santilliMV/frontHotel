@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { reservationsApi } from '../../api/reservations';
 import type { CreateReservationDTO, OccupantType, ReservationCompanion, ReservationResponse } from '../../api/reservations';
 import apiClient from '../../api/client';
-import { PAYMENT_METHODS } from '../../constants';
+import { usePaymentMethods } from '../../hooks/usePaymentMethods';
 
 const toLocalDateStr = (d: Date) => {
   const y = d.getFullYear();
@@ -39,6 +39,9 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente,
   const isCambioHabitacion = !!reservaExistente;
   const isEditar = !!reservaEditar;
   const queryClient = useQueryClient();
+
+  // ← Hook dinámico: reemplaza PAYMENT_METHODS hardcodeado
+  const { options: paymentMethods } = usePaymentMethods();
 
   const [step, setStep] = useState(isCambioHabitacion ? 2 : 0);
 
@@ -76,6 +79,14 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente,
   const [newCompanion, setNewCompanion] = useState<ReservationCompanion>({ name: '' });
   const [payments, setPayments] = useState<PaymentEntry[]>([{ method: 'CASH', amount: '' }]);
   const [error, setError] = useState('');
+
+  // Sincronizar el método default de la primera línea de pago cuando cargan las opciones
+  useEffect(() => {
+    if (paymentMethods.length > 0 && payments.length === 1 && payments[0].amount === '') {
+      setPayments([{ method: paymentMethods[0].value, amount: '' }]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethods]);
 
   const { data: roomTypes = [] } = useQuery<RoomType[]>({
     queryKey: ['room-types'],
@@ -181,7 +192,7 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente,
   const removeCompanion = (i: number) =>
     set('companions', (form.companions || []).filter((_, idx) => idx !== i));
 
-  const addPaymentLine = () => setPayments(p => [...p, { method: 'CASH', amount: '' }]);
+  const addPaymentLine = () => setPayments(p => [...p, { method: paymentMethods[0]?.value ?? 'CASH', amount: '' }]);
   const removePaymentLine = (i: number) => setPayments(p => p.filter((_, idx) => idx !== i));
   const updatePayment = (i: number, key: 'method' | 'amount', val: string) =>
     setPayments(p => p.map((x, idx) => idx === i ? { ...x, [key]: val } : x));
@@ -544,8 +555,9 @@ export default function NuevaReservaModal({ onClose, onCreada, reservaExistente,
                 <div key={i} className="grid grid-cols-2 gap-3 mb-3 items-end">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Método</label>
+                    {/* ← Selector dinámico desde BD */}
                     <select className={fi} value={p.method} onChange={e => updatePayment(i, 'method', e.target.value)}>
-                      {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
                   </div>
                   <div className="flex gap-2 items-end">

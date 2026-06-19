@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../api/client';
 import { usePageTitle } from '../hooks/usePageTitle';
-
+import { usePaymentMethods } from '../hooks/usePaymentMethods';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -43,24 +43,13 @@ interface Room {
   roomTypeName: string;
 }
 
-// ── Constantes ────────────────────────────────────────────────────────────────
-
-const PAYMENT_METHODS = [
-  { value: 'CASH', label: 'Efectivo' },
-  { value: 'CARD', label: 'Tarjeta' },
-  { value: 'TRANSFER', label: 'Transferencia' },
-  { value: 'QR', label: 'QR' },
-  { value: 'NEQUI_SALOMON', label: 'Nequi Salomón' },
-  { value: 'NEQUI_BRAYAN', label: 'Nequi Brayan' },
-];
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const OCCUPANT_LABELS: Record<OccupantType, string> = {
   INDIVIDUAL: 'Individual',
   PAREJA: 'Pareja',
   MULTIPLE_PERSON: 'Múltiple',
 };
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const formatCOP = (n: number) => '$' + Math.round(n).toLocaleString('es-CO');
 
@@ -117,10 +106,10 @@ function getErrorMsg(e: unknown) {
 // ── API ───────────────────────────────────────────────────────────────────────
 
 const fetchActive = async (): Promise<RatoResponse[]> => (await apiClient.get('/rato/active')).data;
-const fetchRooms = async (): Promise<Room[]> => (await apiClient.get('/rooms')).data;
-const postEntry = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/entry', body)).data;
+const fetchRooms  = async (): Promise<Room[]>         => (await apiClient.get('/rooms')).data;
+const postEntry   = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/entry', body)).data;
 const postCheckout = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/checkout', body)).data;
-const postConvert = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/convert-to-night', body)).data;
+const postConvert  = async (body: object): Promise<RatoResponse> => (await apiClient.post('/rato/convert-to-night', body)).data;
 
 // ── Subcomponentes ────────────────────────────────────────────────────────────
 
@@ -128,22 +117,33 @@ function CountdownBadge({ expectedCheckOutTime }: { expectedCheckOutTime: string
   const remaining = useCountdown(expectedCheckOutTime);
   const isLate = remaining <= 0;
   return (
-    <span className={`font-mono text-sm font-semibold tabular-nums ${isLate ? 'text-red-600' : remaining < 600000 ? 'text-amber-600' : 'text-green-700'
-      }`}>
+    <span className={`font-mono text-sm font-semibold tabular-nums ${
+      isLate ? 'text-red-600' : remaining < 600000 ? 'text-amber-600' : 'text-green-700'
+    }`}>
       {formatCountdown(remaining)}
     </span>
   );
 }
 
-function PaymentMethodGrid({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/** Grid de métodos de pago dinámico — recibe las opciones del hook */
+function PaymentMethodGrid({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
   return (
     <div className="grid grid-cols-3 gap-2">
-      {PAYMENT_METHODS.map(m => (
+      {options.map(m => (
         <button key={m.value} onClick={() => onChange(m.value)}
-          className={`text-xs py-2 px-1 rounded-lg border transition-colors ${value === m.value
-            ? 'bg-slate-800 text-white border-slate-800'
-            : 'border-slate-300 text-slate-600 hover:border-slate-400'
-            }`}>
+          className={`text-xs py-2 px-1 rounded-lg border transition-colors ${
+            value === m.value
+              ? 'bg-slate-800 text-white border-slate-800'
+              : 'border-slate-300 text-slate-600 hover:border-slate-400'
+          }`}>
           {m.label}
         </button>
       ))}
@@ -156,10 +156,19 @@ function PaymentMethodGrid({ value, onChange }: { value: string; onChange: (v: s
 function NuevaEntradaModal({ rooms, onClose, onSaved }: {
   rooms: Room[]; onClose: () => void; onSaved: () => void;
 }) {
+  const { options: paymentMethods, getLabel } = usePaymentMethods();
   const [roomId, setRoomId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+
+  // Inicializar con el primer método disponible
+  useEffect(() => {
+    if (paymentMethods.length > 0 && paymentMethod === 'CASH') {
+      setPaymentMethod(paymentMethods[0].value);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethods]);
 
   const mutation = useMutation({
     mutationFn: postEntry,
@@ -208,7 +217,7 @@ function NuevaEntradaModal({ rooms, onClose, onSaved }: {
 
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-2">Método de pago <span className="text-red-500">*</span></label>
-            <PaymentMethodGrid value={paymentMethod} onChange={setPaymentMethod} />
+            <PaymentMethodGrid value={paymentMethod} onChange={setPaymentMethod} options={paymentMethods} />
           </div>
 
           <div>
@@ -227,10 +236,11 @@ function NuevaEntradaModal({ rooms, onClose, onSaved }: {
             </div>
             <div className="flex justify-between text-xs text-slate-400">
               <span>Método</span>
-              <span>{PAYMENT_METHODS.find(m => m.value === paymentMethod)?.label}</span>
+              <span>{getLabel(paymentMethod)}</span>
             </div>
           </div>
         </div>
+
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-xl">
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium">Cancelar</button>
           <button onClick={handleSubmit} disabled={mutation.isPending || availableRooms.length === 0}
@@ -249,14 +259,20 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
   rato: RatoResponse; onClose: () => void; onSaved: () => void;
   onConvert: (r: RatoResponse) => void;
 }) {
-  const remaining = useCountdown(rato.expectedCheckOutTime);
-  const isLate = remaining <= 0;
+  const { options: paymentMethods } = usePaymentMethods();
+  const remaining  = useCountdown(rato.expectedCheckOutTime);
+  const isLate     = remaining <= 0;
   const minutesLate = isLate ? Math.floor(Math.abs(remaining) / 60000) : 0;
 
-  const [option, setOption] = useState<CheckoutOption>(isLate ? 'late' : 'normal');
-  const [lateCharge, setLateCharge] = useState('');
+  const [option,        setOption]        = useState<CheckoutOption>(isLate ? 'late' : 'normal');
+  const [lateCharge,    setLateCharge]    = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
-  const [error, setError] = useState('');
+  const [error,         setError]         = useState('');
+
+  useEffect(() => {
+    if (paymentMethods.length > 0) setPaymentMethod(paymentMethods[0].value);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethods]);
 
   const mutation = useMutation({
     mutationFn: postCheckout,
@@ -294,24 +310,10 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
           {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{error}</div>}
 
           <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Entrada</span>
-              <span className="text-slate-800">{formatTime(rato.entryDateTime)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Límite</span>
-              <span className="text-slate-800">{formatTime(rato.expectedCheckOutTime)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Tiempo</span>
-              <CountdownBadge expectedCheckOutTime={rato.expectedCheckOutTime} />
-            </div>
-            {isLate && (
-              <div className="flex justify-between">
-                <span className="text-slate-500">Retraso</span>
-                <span className="text-red-600 font-medium">{minutesLate} min tarde</span>
-              </div>
-            )}
+            <div className="flex justify-between"><span className="text-slate-500">Entrada</span><span className="text-slate-800">{formatTime(rato.entryDateTime)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Límite</span><span className="text-slate-800">{formatTime(rato.expectedCheckOutTime)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Tiempo</span><CountdownBadge expectedCheckOutTime={rato.expectedCheckOutTime} /></div>
+            {isLate && <div className="flex justify-between"><span className="text-slate-500">Retraso</span><span className="text-red-600 font-medium">{minutesLate} min tarde</span></div>}
           </div>
 
           {isLate && (
@@ -322,21 +324,15 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
 
           <div className="space-y-2">
             <p className="text-xs font-medium text-slate-600 uppercase tracking-wide">¿Cómo sale?</p>
-
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${option === 'normal' ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
-              }`}>
-              <input type="radio" name="co" value="normal" checked={option === 'normal'}
-                onChange={() => setOption('normal')} className="mt-0.5" />
+            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${option === 'normal' ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}>
+              <input type="radio" name="co" value="normal" checked={option === 'normal'} onChange={() => setOption('normal')} className="mt-0.5" />
               <div>
                 <p className="text-sm font-medium text-slate-800">Sale normal</p>
                 <p className="text-xs text-slate-500">Sin recargo · Ya pagó: {formatCOP(rato.basePriceRato)}</p>
               </div>
             </label>
-
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${option === 'late' ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
-              }`}>
-              <input type="radio" name="co" value="late" checked={option === 'late'}
-                onChange={() => setOption('late')} className="mt-0.5" />
+            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${option === 'late' ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}>
+              <input type="radio" name="co" value="late" checked={option === 'late'} onChange={() => setOption('late')} className="mt-0.5" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-slate-800">Sale tarde — cobrar recargo</p>
                 <p className="text-xs text-slate-500 mb-2">Recepcionista decide el monto</p>
@@ -352,7 +348,7 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
           {showMethodSelector && (
             <div>
               <p className="text-xs font-medium text-slate-600 mb-2">Método de pago del recargo</p>
-              <PaymentMethodGrid value={paymentMethod} onChange={setPaymentMethod} />
+              <PaymentMethodGrid value={paymentMethod} onChange={setPaymentMethod} options={paymentMethods} />
             </div>
           )}
 
@@ -379,8 +375,6 @@ function CheckoutModal({ rato, onClose, onSaved, onConvert }: {
 
 // ── Modal: Convertir a noche ──────────────────────────────────────────────────
 
-// ── Modal: Convertir a noche ──────────────────────────────────────────────────
-
 interface NightPreview {
   nightPrice: number;
   alreadyPaid: number;
@@ -390,17 +384,23 @@ interface NightPreview {
 function ConvertToNightModal({ rato, onClose, onSaved }: {
   rato: RatoResponse; onClose: () => void; onSaved: () => void;
 }) {
-  const [step, setStep] = useState<1 | 2>(1);
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [occupantType, setOccupantType] = useState<OccupantType>('PAREJA');
+  const { options: paymentMethods, getLabel } = usePaymentMethods();
+  const [step,           setStep]           = useState<1 | 2>(1);
+  const [firstName,      setFirstName]      = useState('');
+  const [lastName,       setLastName]       = useState('');
+  const [phone,          setPhone]          = useState('');
+  const [occupantType,   setOccupantType]   = useState<OccupantType>('PAREJA');
   const [numberOfGuests, setNumberOfGuests] = useState('1');
-  const [checkOutDate, setCheckOutDate] = useState(tomorrowStr());
-  const [paymentMethod, setPaymentMethod] = useState('CASH');
-  const [error, setError] = useState('');
-  const [preview, setPreview] = useState<NightPreview | null>(null);
+  const [checkOutDate,   setCheckOutDate]   = useState(tomorrowStr());
+  const [paymentMethod,  setPaymentMethod]  = useState('CASH');
+  const [error,          setError]          = useState('');
+  const [preview,        setPreview]        = useState<NightPreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+
+  useEffect(() => {
+    if (paymentMethods.length > 0) setPaymentMethod(paymentMethods[0].value);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethods]);
 
   const mutation = useMutation({
     mutationFn: postConvert,
@@ -408,17 +408,12 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
     onError: (e: unknown) => setError(getErrorMsg(e)),
   });
 
-  // Cada vez que cambia occupantType en paso 1, pre-carga el precio
-  useEffect(() => {
-    setPreview(null);
-  }, [occupantType]);
+  useEffect(() => { setPreview(null); }, [occupantType]);
 
   const handleNext = async () => {
     setError('');
     if (!firstName.trim()) { setError('El nombre es obligatorio.'); return; }
     if (!phone.trim()) { setError('El teléfono es obligatorio.'); return; }
-
-    // Consultar precio real antes de pasar al paso 2
     setLoadingPreview(true);
     try {
       const res = await apiClient.get('/rato/preview-night-price', {
@@ -458,7 +453,6 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
         </div>
 
-        {/* Indicador pasos */}
         <div className="flex items-center gap-2 px-6 pt-4">
           {([1, 2] as const).map(s => (
             <div key={s} className="flex items-center gap-2">
@@ -476,31 +470,25 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
         <div className="px-6 py-5 space-y-4">
           {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{error}</div>}
 
-          {/* Paso 1 */}
           {step === 1 && (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-                  <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)}
-                    placeholder="Nombre" autoFocus
+                  <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Nombre" autoFocus
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Apellido <span className="text-slate-400">(opcional)</span></label>
-                  <input type="text" value={lastName} onChange={e => setLastName(e.target.value)}
-                    placeholder="Apellido"
+                  <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Apellido"
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
                 </div>
               </div>
-
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Teléfono <span className="text-red-500">*</span></label>
-                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                  placeholder="3001234567"
+                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="3001234567"
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
               </div>
-
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-2">Tipo de ocupante</label>
                 <div className="flex gap-2">
@@ -514,56 +502,33 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
                   ))}
                 </div>
               </div>
-
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Número de huéspedes</label>
-                <input type="number" value={numberOfGuests} onChange={e => setNumberOfGuests(e.target.value)}
-                  min="1" max="10"
+                <input type="number" value={numberOfGuests} onChange={e => setNumberOfGuests(e.target.value)} min="1" max="10"
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
               </div>
             </>
           )}
 
-          {/* Paso 2 */}
           {step === 2 && (
             <>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Fecha de salida <span className="text-red-500">*</span></label>
-                <input type="date" value={checkOutDate} min={tomorrowStr()}
-                  onChange={e => setCheckOutDate(e.target.value)}
+                <input type="date" value={checkOutDate} min={tomorrowStr()} onChange={e => setCheckOutDate(e.target.value)}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
               </div>
-
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-2">Método de pago de la diferencia</label>
-                <PaymentMethodGrid value={paymentMethod} onChange={setPaymentMethod} />
+                <PaymentMethodGrid value={paymentMethod} onChange={setPaymentMethod} options={paymentMethods} />
               </div>
-
-              {/* Resumen con precios reales */}
               <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Huésped</span>
-                  <span className="font-medium text-slate-800">{firstName} {lastName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Ocupante</span>
-                  <span className="text-slate-700">{OCCUPANT_LABELS[occupantType]}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Salida</span>
-                  <span className="text-slate-700">{new Date(checkOutDate + 'T12:00:00').toLocaleDateString('es-CO')}</span>
-                </div>
-
+                <div className="flex justify-between"><span className="text-slate-500">Huésped</span><span className="font-medium text-slate-800">{firstName} {lastName}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Ocupante</span><span className="text-slate-700">{OCCUPANT_LABELS[occupantType]}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Salida</span><span className="text-slate-700">{new Date(checkOutDate + 'T12:00:00').toLocaleDateString('es-CO')}</span></div>
                 {preview && (
                   <>
-                    <div className="border-t border-slate-200 pt-1.5 flex justify-between">
-                      <span className="text-slate-500">Precio noche completa</span>
-                      <span className="text-slate-700">{formatCOP(preview.nightPrice)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Ya pagó (rato)</span>
-                      <span className="text-slate-700">− {formatCOP(preview.alreadyPaid)}</span>
-                    </div>
+                    <div className="border-t border-slate-200 pt-1.5 flex justify-between"><span className="text-slate-500">Precio noche completa</span><span className="text-slate-700">{formatCOP(preview.nightPrice)}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Ya pagó (rato)</span><span className="text-slate-700">− {formatCOP(preview.alreadyPaid)}</span></div>
                     <div className="flex justify-between font-semibold border-t border-slate-200 pt-1.5">
                       <span className="text-slate-700">Cobra ahora</span>
                       <span className={preview.extensionCharge > 0 ? 'text-slate-900' : 'text-green-700'}>
@@ -572,10 +537,9 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
                     </div>
                   </>
                 )}
-
                 <div className="flex justify-between text-xs text-slate-400 pt-1">
                   <span>Método</span>
-                  <span>{PAYMENT_METHODS.find(m => m.value === paymentMethod)?.label}</span>
+                  <span>{getLabel(paymentMethod)}</span>
                 </div>
               </div>
             </>
@@ -608,11 +572,9 @@ function ConvertToNightModal({ rato, onClose, onSaved }: {
 
 function RatoCard({ rato, onCheckout }: { rato: RatoResponse; onCheckout: (r: RatoResponse) => void }) {
   const remaining = useCountdown(rato.expectedCheckOutTime);
-  const isLate = remaining <= 0;
-
+  const isLate    = remaining <= 0;
   return (
-    <div className={`bg-white border rounded-xl px-5 py-4 transition-colors ${isLate ? 'border-red-300 bg-red-50/30' : 'border-slate-200'
-      }`}>
+    <div className={`bg-white border rounded-xl px-5 py-4 transition-colors ${isLate ? 'border-red-300 bg-red-50/30' : 'border-slate-200'}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -632,8 +594,9 @@ function RatoCard({ rato, onCheckout }: { rato: RatoResponse; onCheckout: (r: Ra
           </div>
           <div className="text-xs text-slate-500">{formatCOP(rato.basePriceRato)}</div>
           <button onClick={() => onCheckout(rato)}
-            className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${isLate ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-slate-800 text-white hover:bg-slate-700'
-              }`}>
+            className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              isLate ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-slate-800 text-white hover:bg-slate-700'
+            }`}>
             {isLate ? 'Checkout urgente' : 'Checkout'}
           </button>
         </div>
@@ -642,12 +605,10 @@ function RatoCard({ rato, onCheckout }: { rato: RatoResponse; onCheckout: (r: Ra
   );
 }
 
-// ── Tarjeta rato cerrado ──────────────────────────────────────────────────────
-
 function RatoClosedCard({ rato }: { rato: RatoResponse }) {
   const statusColors: Record<RatoStatus, string> = {
-    ACTIVE: 'bg-green-100 text-green-700',
-    CHECKED_OUT: 'bg-slate-100 text-slate-600',
+    ACTIVE:            'bg-green-100 text-green-700',
+    CHECKED_OUT:       'bg-slate-100 text-slate-600',
     EXTENDED_TO_NIGHT: 'bg-blue-100 text-blue-700',
   };
   return (
@@ -656,24 +617,18 @@ function RatoClosedCard({ rato }: { rato: RatoResponse }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-base font-semibold text-slate-700">Hab. {rato.roomNumber}</span>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColors[rato.status]}`}>
-              {rato.statusLabel}
-            </span>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColors[rato.status]}`}>{rato.statusLabel}</span>
           </div>
           <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
             <span>Entrada: {formatTime(rato.entryDateTime)}</span>
             {rato.actualCheckOutTime && <span>Salida: {formatTime(rato.actualCheckOutTime)}</span>}
-            {rato.minutesLate && rato.minutesLate > 0
-              ? <span className="text-amber-600">{rato.minutesLate} min tarde</span> : null}
+            {rato.minutesLate && rato.minutesLate > 0 ? <span className="text-amber-600">{rato.minutesLate} min tarde</span> : null}
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-sm font-semibold text-slate-800">
-            {formatCOP(rato.basePriceRato + (rato.lateCharge ?? 0) + (rato.nightExtensionCharge ?? 0))}
-          </p>
+          <p className="text-sm font-semibold text-slate-800">{formatCOP(rato.basePriceRato + (rato.lateCharge ?? 0) + (rato.nightExtensionCharge ?? 0))}</p>
           {rato.lateCharge > 0 && <p className="text-xs text-amber-600">+{formatCOP(rato.lateCharge)} recargo</p>}
-          {rato.nightExtensionCharge && rato.nightExtensionCharge > 0
-            ? <p className="text-xs text-blue-600">+{formatCOP(rato.nightExtensionCharge)} extensión</p> : null}
+          {rato.nightExtensionCharge && rato.nightExtensionCharge > 0 ? <p className="text-xs text-blue-600">+{formatCOP(rato.nightExtensionCharge)} extensión</p> : null}
         </div>
       </div>
     </div>
@@ -683,25 +638,22 @@ function RatoClosedCard({ rato }: { rato: RatoResponse }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 
 export default function Rato() {
-    usePageTitle('Rato');
-  const today = toLocalDateStr(new Date());
+  usePageTitle('Rato');
+  const today         = toLocalDateStr(new Date());
   const [selectedDate, setSelectedDate] = useState(today);
-  const [showEntrada, setShowEntrada] = useState(false);
+  const [showEntrada,  setShowEntrada]  = useState(false);
   const [checkoutRato, setCheckoutRato] = useState<RatoResponse | null>(null);
-  const [convertRato, setConvertRato] = useState<RatoResponse | null>(null);
+  const [convertRato,  setConvertRato]  = useState<RatoResponse | null>(null);
   const queryClient = useQueryClient();
-
   const isToday = selectedDate === today;
 
-  // Ratos activos — solo para hoy
-  const { data: active = [], isLoading: loadingActive, isError: errorActive } = useQuery<RatoResponse[]>({
+  const { data: active = [],  isLoading: loadingActive,  isError: errorActive }  = useQuery<RatoResponse[]>({
     queryKey: ['rato-active'],
     queryFn: fetchActive,
     refetchInterval: isToday ? 30000 : false,
     enabled: isToday,
   });
 
-  // Historial por fecha
   const { data: history = [], isLoading: loadingHistory, isError: errorHistory } = useQuery<RatoResponse[]>({
     queryKey: ['rato-date', selectedDate],
     queryFn: () => apiClient.get(`/rato/date/${selectedDate}`).then(r => r.data),
@@ -719,18 +671,16 @@ export default function Rato() {
     queryClient.invalidateQueries({ queryKey: ['rooms'] });
   };
 
-  const activeRatos = isToday ? active.filter(r => r.status === 'ACTIVE') : [];
-  const lateCount = activeRatos.filter(r => r.isLate).length;
-
-  // Para historial: todos los del día seleccionado
-  const historyAll = history;
-  const historyDone = historyAll.filter(r => r.status !== 'ACTIVE');
+  const activeRatos  = isToday ? active.filter(r => r.status === 'ACTIVE') : [];
+  const lateCount    = activeRatos.filter(r => r.isLate).length;
+  const historyAll   = history;
+  const historyDone  = historyAll.filter(r => r.status !== 'ACTIVE');
   const historyActive = historyAll.filter(r => r.status === 'ACTIVE');
   const totalRecaudado = historyAll.reduce((sum, r) =>
     sum + r.basePriceRato + (r.lateCharge ?? 0) + (r.nightExtensionCharge ?? 0), 0);
 
   const isLoading = isToday ? loadingActive : loadingHistory;
-  const isError = isToday ? errorActive : errorHistory;
+  const isError   = isToday ? errorActive   : errorHistory;
 
   const changeDate = (delta: number) => {
     const d = new Date(selectedDate + 'T12:00:00');
@@ -748,79 +698,44 @@ export default function Rato() {
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Encabezado */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-slate-800">Servicio Rato</h1>
             <p className="text-sm text-slate-500 mt-0.5 capitalize">
               {formatDateLabel(selectedDate)}
-              {!isToday && (
-                <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
-                  Histórico
-                </span>
-              )}
-              {isToday && lateCount > 0 && (
-                <span className="ml-2 text-red-600 font-medium">· {lateCount} con tiempo excedido</span>
-              )}
+              {!isToday && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">Histórico</span>}
+              {isToday && lateCount > 0 && <span className="ml-2 text-red-600 font-medium">· {lateCount} con tiempo excedido</span>}
             </p>
           </div>
           {isToday && (
             <button onClick={() => setShowEntrada(true)}
               className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors">
-              <span className="text-base leading-none">+</span>
-              Nueva entrada
+              <span className="text-base leading-none">+</span> Nueva entrada
             </button>
           )}
         </div>
 
-        {/* Selector de fecha */}
         <div className="flex items-center gap-2">
-          <button onClick={() => changeDate(-1)}
-            className="p-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-600 text-sm">
-            &#8592;
-          </button>
-          <input type="date" value={selectedDate} max={today}
-            onChange={e => { if (e.target.value) setSelectedDate(e.target.value); }}
+          <button onClick={() => changeDate(-1)} className="p-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-600 text-sm">&#8592;</button>
+          <input type="date" value={selectedDate} max={today} onChange={e => { if (e.target.value) setSelectedDate(e.target.value); }}
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white" />
-          <button onClick={() => changeDate(1)} disabled={selectedDate >= today}
-            className="p-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-600 text-sm disabled:opacity-40">
-            &#8594;
-          </button>
-          {!isToday && (
-            <button onClick={() => setSelectedDate(today)}
-              className="text-xs text-slate-500 hover:text-slate-700 underline ml-1">
-              Hoy
-            </button>
-          )}
+          <button onClick={() => changeDate(1)} disabled={selectedDate >= today} className="p-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-600 text-sm disabled:opacity-40">&#8594;</button>
+          {!isToday && <button onClick={() => setSelectedDate(today)} className="text-xs text-slate-500 hover:text-slate-700 underline ml-1">Hoy</button>}
         </div>
 
-        {/* Resumen del día */}
         <div className="grid grid-cols-4 gap-3">
-          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-center">
-            <p className="text-2xl font-bold text-slate-800">{historyAll.length}</p>
-            <p className="text-xs text-slate-500 mt-0.5">Total del día</p>
-          </div>
-          <div className={`border rounded-xl px-4 py-3 text-center ${isToday && lateCount > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'
-            }`}>
-            <p className={`text-2xl font-bold ${isToday && lateCount > 0 ? 'text-red-600' : 'text-slate-800'}`}>
-              {isToday ? activeRatos.length : historyActive.length}
-            </p>
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-center"><p className="text-2xl font-bold text-slate-800">{historyAll.length}</p><p className="text-xs text-slate-500 mt-0.5">Total del día</p></div>
+          <div className={`border rounded-xl px-4 py-3 text-center ${isToday && lateCount > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
+            <p className={`text-2xl font-bold ${isToday && lateCount > 0 ? 'text-red-600' : 'text-slate-800'}`}>{isToday ? activeRatos.length : historyActive.length}</p>
             <p className="text-xs text-slate-500 mt-0.5">En curso</p>
           </div>
-          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-center">
-            <p className="text-2xl font-bold text-slate-800">{historyDone.length}</p>
-            <p className="text-xs text-slate-500 mt-0.5">Completados</p>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-center">
-            <p className="text-lg font-bold text-slate-800">{formatCOP(totalRecaudado)}</p>
-            <p className="text-xs text-slate-500 mt-0.5">Recaudado</p>
-          </div>
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-center"><p className="text-2xl font-bold text-slate-800">{historyDone.length}</p><p className="text-xs text-slate-500 mt-0.5">Completados</p></div>
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-center"><p className="text-lg font-bold text-slate-800">{formatCOP(totalRecaudado)}</p><p className="text-xs text-slate-500 mt-0.5">Recaudado</p></div>
         </div>
 
         {isLoading && <div className="text-center py-10 text-slate-400 text-sm">Cargando...</div>}
-        {isError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">No se pudieron cargar los ratos.</div>}
+        {isError   && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">No se pudieron cargar los ratos.</div>}
 
-        {/* Activos — solo hoy */}
         {isToday && !isLoading && activeRatos.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">En curso ahora</h2>
@@ -834,12 +749,9 @@ export default function Rato() {
           <div className="text-center py-12 text-slate-400 text-sm">No hay ratos registrados hoy.</div>
         )}
 
-        {/* Historial del día */}
         {!isLoading && historyDone.length > 0 && (
           <div className="space-y-2">
-            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              {isToday ? 'Completados hoy' : 'Ratos del día'}
-            </h2>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{isToday ? 'Completados hoy' : 'Ratos del día'}</h2>
             {historyDone
               .sort((a, b) => new Date(b.entryDateTime).getTime() - new Date(a.entryDateTime).getTime())
               .map(r => <RatoClosedCard key={r.id} rato={r} />)}
@@ -849,29 +761,11 @@ export default function Rato() {
         {!isToday && !isLoading && historyAll.length === 0 && (
           <div className="text-center py-12 text-slate-400 text-sm">No hay ratos registrados para este día.</div>
         )}
-
       </div>
 
-      {showEntrada && (
-        <NuevaEntradaModal rooms={rooms} onClose={() => setShowEntrada(false)} onSaved={handleSaved} />
-      )}
-
-      {checkoutRato && (
-        <CheckoutModal
-          rato={checkoutRato}
-          onClose={() => setCheckoutRato(null)}
-          onSaved={handleSaved}
-          onConvert={r => { setCheckoutRato(null); setConvertRato(r); }}
-        />
-      )}
-
-      {convertRato && (
-        <ConvertToNightModal
-          rato={convertRato}
-          onClose={() => setConvertRato(null)}
-          onSaved={handleSaved}
-        />
-      )}
+      {showEntrada && <NuevaEntradaModal rooms={rooms} onClose={() => setShowEntrada(false)} onSaved={handleSaved} />}
+      {checkoutRato && <CheckoutModal rato={checkoutRato} onClose={() => setCheckoutRato(null)} onSaved={handleSaved} onConvert={r => { setCheckoutRato(null); setConvertRato(r); }} />}
+      {convertRato  && <ConvertToNightModal rato={convertRato} onClose={() => setConvertRato(null)} onSaved={handleSaved} />}
     </div>
   );
 }

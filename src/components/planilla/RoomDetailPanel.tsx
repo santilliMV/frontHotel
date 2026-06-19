@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/client';
+import { usePaymentMethods } from '../../hooks/usePaymentMethods';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ interface RoomByDate {
   overdue?: boolean;
   preAssignedReservationId?: string;
 }
+
 interface RoomTowels {
   totalDelivered: number;
   totalReturned: number;
@@ -35,6 +37,7 @@ interface ReservationDetail {
   guestName: string;
   guestPhone: string;
   guestHasObservations: boolean;
+  guestVehiclePlate?: string;
   roomNumber: string;
   roomTypeName: string;
   checkInDate: string;
@@ -59,7 +62,6 @@ interface ServiceCharge {
   addedBy: string;
   serviceType: string;
   paidImmediately: boolean;
-
 }
 
 interface TowelInventory {
@@ -97,20 +99,16 @@ const OCCUPANT_LABELS: Record<string, string> = {
   MULTIPLE_PERSON: 'Múltiple',
 };
 
-const PAYMENT_METHODS = [
-  { value: 'CASH', label: 'Efectivo' },
-  { value: 'CARD', label: 'Tarjeta' },
-  { value: 'TRANSFER', label: 'Transferencia' },
-  { value: 'QR', label: 'QR' },
-  { value: 'NEQUI_SALOMON', label: 'Nequi Salomón' },
-  { value: 'NEQUI_BRAYAN', label: 'Nequi Brayan' },
-];
-
 // ─── Componente ──────────────────────────────────────────────────────────────
 
 export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   const queryClient = useQueryClient();
   const reservationId = room.reservationId ?? room.preAssignedReservationId;
+
+  // ── Métodos de pago dinámicos ─────────────────────────────────────────────
+  const { options: paymentMethods } = usePaymentMethods();
+  const defaultMethod = paymentMethods[0]?.value ?? 'CASH';
+
   const [section, setSection] = useState<'info' | 'vitrina' | 'toallas' | 'extender' | 'abono' | 'ocupantes' | 'cobroExtra'>(
     room.rato ? 'toallas' : 'info'
   );
@@ -126,7 +124,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
   // Estado abono
   const [abonoAmount, setAbonoAmount] = useState('');
-  const [abonoMethod, setAbonoMethod] = useState('CASH');
+  const [abonoMethod, setAbonoMethod] = useState(defaultMethod);
   const [abonoNotes, setAbonoNotes] = useState('');
   const [abonoDone, setAbonoDone] = useState(false);
   const [abonoError, setAbonoError] = useState('');
@@ -146,20 +144,20 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
   // Estado vitrina/pago consumos
   const [vitrinaPayAmount, setVitrinaPayAmount] = useState('');
-  const [vitrinaPayMethod, setVitrinaPayMethod] = useState('CASH');
+  const [vitrinaPayMethod, setVitrinaPayMethod] = useState(defaultMethod);
   const [vitrinaPayDone, setVitrinaPayDone] = useState(false);
   const [vitrinaPayError, setVitrinaPayError] = useState('');
 
-
-
+  // Estado cobro extra
   const [cobroDesc, setCobroDesc] = useState('');
   const [cobroAmount, setCobroAmount] = useState('');
-  const [cobroMethod, setCobroMethod] = useState('CASH');
+  const [cobroMethod, setCobroMethod] = useState(defaultMethod);
   const [cobroTipo, setCobroTipo] = useState<'PAGO' | 'CARGO'>('PAGO');
   const [cobroDone, setCobroDone] = useState(false);
   const [cobroError, setCobroError] = useState('');
 
   const [extenderTipo, setExtenderTipo] = useState<'EXTENDER' | 'ACORTAR'>('EXTENDER');
+
   // ── Queries ────────────────────────────────────────────────────────────────
 
   const { data: reservation, isLoading: loadingRes } = useQuery<ReservationDetail>({
@@ -182,10 +180,10 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
   const { data: serviceCharges = [], isLoading: loadingCharges } = useQuery<ServiceCharge[]>({
     queryKey: ['service-charges', reservationId],
     queryFn: () => apiClient.get(`/reservations/${reservationId}/charges`).then(r => r.data),
-    enabled: !!reservationId, // ← quitar la condición de section
+    enabled: !!reservationId,
   });
 
-  // ── Mutación: entregar toallas extra ──────────────────────────────────────
+  // ── Mutaciones ────────────────────────────────────────────────────────────
 
   const towelMutation = useMutation({
     mutationFn: () =>
@@ -194,21 +192,20 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['towels-inventory'] });
-      queryClient.invalidateQueries({ queryKey: ['room-towels', reservationId] }); // ← agrega esta línea
+      queryClient.invalidateQueries({ queryKey: ['room-towels', reservationId] });
       setTowelDone(true);
     },
   });
 
   const cobroExtraMutation = useMutation({
-    mutationFn: () => {
-      return apiClient.post(`/reservations/${reservationId}/charges/add`, {
+    mutationFn: () =>
+      apiClient.post(`/reservations/${reservationId}/charges/add`, {
         description: cobroDesc.trim() || 'Cobro extra',
         amount: cobroAmount,
         serviceType: 'EXTRA',
         paidImmediately: cobroTipo === 'PAGO' ? 'true' : 'false',
         method: cobroTipo === 'PAGO' ? cobroMethod : undefined,
-      }).then(r => r.data);
-    },
+      }).then(r => r.data),
     onSuccess: () => {
       setCobroDone(true);
       setCobroError('');
@@ -219,8 +216,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
       setCobroError(err?.response?.data?.error ?? 'Error al registrar el cobro');
     },
   });
-
-  // ── Mutación: ocupantes ───────────────────────────────────────────────────
 
   const ocupantesMutation = useMutation({
     mutationFn: () =>
@@ -239,8 +234,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
     },
   });
 
-  // ── Mutación: extender estadía ────────────────────────────────────────────
-
   const extendMutation = useMutation({
     mutationFn: () =>
       apiClient.patch(`/reservations/${reservationId}/extend`, {
@@ -256,8 +249,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
       setExtendError(err?.response?.data?.error ?? 'Error al extender la estadía');
     },
   });
-
-  // ── Mutación: abono ───────────────────────────────────────────────────────
 
   const abonoMutation = useMutation({
     mutationFn: () =>
@@ -278,8 +269,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
     },
   });
 
-  // ── Mutación: pagar consumos de vitrina ───────────────────────────────────
-
   const vitrinaPayMutation = useMutation({
     mutationFn: () =>
       apiClient.post(`/reservations/${reservationId}/charges/pay`, {
@@ -299,7 +288,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
   // ── Cálculos ──────────────────────────────────────────────────────────────
 
-
   const depositPagado = reservation?.depositAmount ?? 0;
   const totalEstimado = reservation?.estimatedTotal ?? 0;
   const totalConsumos = serviceCharges
@@ -310,25 +298,38 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
     .reduce((sum, c) => sum + c.totalPrice, 0);
   const saldoPendiente = Math.max(0, totalEstimado - depositPagado);
 
-
   const minExtendDate = reservation
     ? (() => {
-      const d = new Date(reservation.checkOutDate + 'T12:00:00');
-      d.setDate(d.getDate() + 1);
-      return d.toISOString().split('T')[0];
-    })()
+        const d = new Date(reservation.checkOutDate + 'T12:00:00');
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().split('T')[0];
+      })()
     : '';
+
+  // ── Select de métodos helper ──────────────────────────────────────────────
+
+  const MethodSelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+    >
+      {paymentMethods.map(m => (
+        <option key={m.value} value={m.value}>{m.label}</option>
+      ))}
+    </select>
+  );
 
   // ─────────────────────────────────────────────────────────────────────────
 
   const TABS = [
-    { key: 'info', label: 'Info' },
-    { key: 'vitrina', label: 'Vitrina' },
-    { key: 'toallas', label: 'Toallas' },
-    { key: 'extender', label: 'Extender/Acortar' },
-    { key: 'abono', label: 'Abono' },
+    { key: 'info',       label: 'Info' },
+    { key: 'vitrina',    label: 'Vitrina' },
+    { key: 'toallas',   label: 'Toallas' },
+    { key: 'extender',  label: 'Extender/Acortar' },
+    { key: 'abono',     label: 'Abono' },
     { key: 'ocupantes', label: 'Ocupantes' },
-    { key: 'cobroExtra', label: 'Cobro extra' },
+    { key: 'cobroExtra',label: 'Cobro extra' },
   ] as const;
 
   return (
@@ -338,19 +339,21 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
 
       {/* Panel */}
       <div className="fixed right-0 top-0 h-full w-[550px] bg-white shadow-2xl z-50 flex flex-col">
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-slate-800">Hab. {room.roomNumber}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${room.rato
-                ? 'bg-violet-100 text-violet-700 border-violet-200'
-                : room.overdue
-                  ? 'bg-orange-100 text-orange-700 border-orange-200'
-                  : room.status === 'OCCUPIED'
-                    ? 'bg-blue-100 text-blue-700 border-blue-200'
-                    : 'bg-slate-100 text-slate-600 border-slate-200'
-                }`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
+                room.rato
+                  ? 'bg-violet-100 text-violet-700 border-violet-200'
+                  : room.overdue
+                    ? 'bg-orange-100 text-orange-700 border-orange-200'
+                    : room.status === 'OCCUPIED'
+                      ? 'bg-blue-100 text-blue-700 border-blue-200'
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
                 {room.rato ? 'Rato' : room.overdue ? 'Vencida' : room.statusLabel}
               </span>
             </div>
@@ -371,10 +374,11 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
               <button
                 key={tab.key}
                 onClick={() => setSection(tab.key)}
-                className={`flex-shrink-0 px-3 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${section === tab.key
-                  ? 'text-slate-800 border-b-2 border-slate-800 bg-white'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                  }`}
+                className={`flex-shrink-0 px-3 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                  section === tab.key
+                    ? 'text-slate-800 border-b-2 border-slate-800 bg-white'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
               >
                 {tab.label}
                 {tab.key === 'vitrina' && serviceCharges.filter(c => c.serviceType === 'VITRINA').length > 0 && (
@@ -390,7 +394,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
         {/* Contenido scrollable */}
         <div className="flex-1 overflow-y-auto">
 
-          {/* ── Sección: INFO ─────────────────────────────────────────────── */}
+          {/* ── INFO ─────────────────────────────────────────────────────── */}
           {(section === 'info' || !reservationId) && !room.rato && (
             <div className="p-6 space-y-5">
 
@@ -425,6 +429,14 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                         <span className="text-sm text-slate-500">Personas</span>
                         <span className="text-sm text-slate-700">{reservation.numberOfGuests}</span>
                       </div>
+                      {reservation.guestVehiclePlate && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-slate-500">Placa vehículo</span>
+                          <span className="text-sm font-medium text-slate-800 font-mono tracking-wide">
+                            {reservation.guestVehiclePlate}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -506,8 +518,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                           </span>
                         </div>
                       )}
-
-
                       <div className="border-t border-slate-200 pt-2.5 flex justify-between">
                         <span className="text-sm font-semibold text-slate-700">Saldo pendiente</span>
                         <span className={`text-sm font-bold ${(saldoPendiente + totalConsumos + totalExtras) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
@@ -515,7 +525,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                         </span>
                       </div>
                     </div>
-
                   </div>
                 </>
               )}
@@ -528,26 +537,17 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
             </div>
           )}
 
-          {/* ── Sección: VITRINA ─────────────────────────────────────────── */}
+          {/* ── VITRINA ───────────────────────────────────────────────────── */}
           {section === 'vitrina' && reservation && (
             <div className="p-6 space-y-5">
-
-              {/* Resumen consumos */}
               <div className="bg-slate-50 rounded-xl p-4">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
                   Consumos anotados a la habitación
                 </p>
-
-                {loadingCharges && (
-                  <p className="text-sm text-slate-400 text-center py-4">Cargando...</p>
-                )}
-
+                {loadingCharges && <p className="text-sm text-slate-400 text-center py-4">Cargando...</p>}
                 {!loadingCharges && serviceCharges.length === 0 && (
-                  <p className="text-sm text-slate-400 text-center py-4">
-                    Sin consumos anotados
-                  </p>
+                  <p className="text-sm text-slate-400 text-center py-4">Sin consumos anotados</p>
                 )}
-
                 {!loadingCharges && serviceCharges.length > 0 && (
                   <div className="space-y-2">
                     {serviceCharges.filter(c => c.serviceType === 'VITRINA').map(charge => (
@@ -565,8 +565,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                         </div>
                       </div>
                     ))}
-
-                    {/* Total */}
                     <div className="flex justify-between items-center border-t border-slate-200 pt-3 mt-1">
                       <span className="text-sm font-semibold text-slate-700">Total consumos</span>
                       <span className="text-base font-bold text-amber-600">{fmt(totalConsumos)}</span>
@@ -575,7 +573,6 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 )}
               </div>
 
-              {/* Sección pago */}
               {serviceCharges.length > 0 && (
                 <>
                   {vitrinaPayDone ? (
@@ -583,11 +580,7 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                       <p className="text-sm font-medium text-emerald-700">Pago registrado correctamente</p>
                       <p className="text-xs text-slate-500">El cobro quedó registrado en caja</p>
                       <button
-                        onClick={() => {
-                          setVitrinaPayDone(false);
-                          setVitrinaPayAmount('');
-                          queryClient.invalidateQueries({ queryKey: ['service-charges', reservationId] });
-                        }}
+                        onClick={() => { setVitrinaPayDone(false); setVitrinaPayAmount(''); queryClient.invalidateQueries({ queryKey: ['service-charges', reservationId] }); }}
                         className="mt-2 text-xs text-emerald-600 underline"
                       >
                         Registrar otro pago
@@ -595,70 +588,38 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                        Pagar consumos ahora
-                      </p>
-
-                      {/* Monto */}
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Pagar consumos ahora</p>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1.5">Monto a cobrar</label>
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                           <input
-                            type="number"
-                            value={vitrinaPayAmount}
+                            type="number" value={vitrinaPayAmount}
                             onChange={e => { setVitrinaPayAmount(e.target.value); setVitrinaPayError(''); }}
                             placeholder="0" min="1" max={totalConsumos}
                             className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                           />
                         </div>
                         {vitrinaPayAmount && Number(vitrinaPayAmount) > totalConsumos && (
-                          <p className="text-xs text-red-500 mt-1">
-                            El monto no puede superar el total de consumos ({fmt(totalConsumos)})
-                          </p>
+                          <p className="text-xs text-red-500 mt-1">El monto no puede superar el total ({fmt(totalConsumos)})</p>
                         )}
-                        {/* Atajo total */}
-                        <button
-                          onClick={() => setVitrinaPayAmount(String(Math.round(totalConsumos)))}
-                          className="mt-1.5 text-xs text-blue-600 hover:underline"
-                        >
+                        <button onClick={() => setVitrinaPayAmount(String(Math.round(totalConsumos)))} className="mt-1.5 text-xs text-blue-600 hover:underline">
                           Usar total: {fmt(totalConsumos)}
                         </button>
                       </div>
-
-                      {/* Método */}
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1.5">Método de pago</label>
-                        <select
-                          value={vitrinaPayMethod}
-                          onChange={e => setVitrinaPayMethod(e.target.value)}
-                          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                        >
-                          {PAYMENT_METHODS.map(m => (
-                            <option key={m.value} value={m.value}>{m.label}</option>
-                          ))}
-                        </select>
+                        <MethodSelect value={vitrinaPayMethod} onChange={setVitrinaPayMethod} />
                       </div>
-
-                      {vitrinaPayError && (
-                        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                          <p className="text-sm text-red-600">{vitrinaPayError}</p>
-                        </div>
-                      )}
-
+                      {vitrinaPayError && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2"><p className="text-sm text-red-600">{vitrinaPayError}</p></div>}
                       <button
                         onClick={() => vitrinaPayMutation.mutate()}
                         disabled={!vitrinaPayAmount || Number(vitrinaPayAmount) <= 0 || Number(vitrinaPayAmount) > totalConsumos || vitrinaPayMutation.isPending}
                         className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
                       >
-                        {vitrinaPayMutation.isPending
-                          ? 'Registrando...'
-                          : `Cobrar ${vitrinaPayAmount ? fmt(Number(vitrinaPayAmount)) : '...'}`}
+                        {vitrinaPayMutation.isPending ? 'Registrando...' : `Cobrar ${vitrinaPayAmount ? fmt(Number(vitrinaPayAmount)) : '...'}`}
                       </button>
-
-                      <p className="text-xs text-slate-400 text-center">
-                        Este pago se registra en caja. Los consumos seguirán apareciendo en el checkout para el resumen final.
-                      </p>
+                      <p className="text-xs text-slate-400 text-center">Este pago se registra en caja. Los consumos seguirán apareciendo en el checkout para el resumen final.</p>
                     </div>
                   )}
                 </>
@@ -666,35 +627,22 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
             </div>
           )}
 
-          {/* ── Sección: TOALLAS EXTRA ────────────────────────────────────── */}
-          {/* ── Sección: TOALLAS EXTRA ────────────────────────────────────── */}
+          {/* ── TOALLAS ───────────────────────────────────────────────────── */}
           {section === 'toallas' && reservation && (
             <div className="p-6 space-y-5">
-
-              {/* Toallas en esta habitación */}
               <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-                  Toallas en Hab. {room.roomNumber}
-                </p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Toallas en Hab. {room.roomNumber}</p>
                 <div className="bg-slate-50 rounded-xl p-4 space-y-2.5">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-slate-500">En la habitación ahora</span>
                     <span className="text-2xl font-bold text-slate-800">
-                      {roomTowels
-                        ? (room.rato
-                          ? Math.max(1, roomTowels.currentInRoom)
-                          : roomTowels.currentInRoom)
-                        : '—'}
+                      {roomTowels ? (room.rato ? Math.max(1, roomTowels.currentInRoom) : roomTowels.currentInRoom) : '—'}
                     </span>
                   </div>
                   <div className="border-t border-slate-200 pt-2.5 space-y-1.5">
                     <div className="flex justify-between">
                       <span className="text-xs text-slate-400">Total entregadas</span>
-                      <span className="text-xs text-slate-600">
-                        {roomTowels
-                          ? (room.rato ? Math.max(1, roomTowels.totalDelivered) : roomTowels.totalDelivered)
-                          : '—'}
-                      </span>
+                      <span className="text-xs text-slate-600">{roomTowels ? (room.rato ? Math.max(1, roomTowels.totalDelivered) : roomTowels.totalDelivered) : '—'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-xs text-slate-400">Total recogidas sucias</span>
@@ -702,50 +650,29 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     </div>
                   </div>
                 </div>
-                <p className="text-xs text-slate-400 mt-2">
-                  Limpias disponibles en inventario: <span className="font-medium text-slate-600">{towels?.cleanTowels ?? '—'}</span>
-                </p>
+                <p className="text-xs text-slate-400 mt-2">Limpias disponibles en inventario: <span className="font-medium text-slate-600">{towels?.cleanTowels ?? '—'}</span></p>
               </div>
 
               {towelDone ? (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center">
-                  <p className="text-sm font-medium text-emerald-700">
-                    {towelQty} toalla{towelQty !== 1 ? 's' : ''} entregada{towelQty !== 1 ? 's' : ''} correctamente
-                  </p>
-                  <button
-                    onClick={() => { setTowelDone(false); setTowelQty(1); }}
-                    className="mt-3 text-xs text-emerald-600 underline"
-                  >
-                    Entregar más
-                  </button>
+                  <p className="text-sm font-medium text-emerald-700">{towelQty} toalla{towelQty !== 1 ? 's' : ''} entregada{towelQty !== 1 ? 's' : ''} correctamente</p>
+                  <button onClick={() => { setTowelDone(false); setTowelQty(1); }} className="mt-3 text-xs text-emerald-600 underline">Entregar más</button>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-2">Cantidad a entregar</label>
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setTowelQty(q => Math.max(1, q - 1))}
-                        className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
-                      >−</button>
+                      <button onClick={() => setTowelQty(q => Math.max(1, q - 1))} className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center">−</button>
                       <span className="text-2xl font-bold text-slate-800 w-8 text-center">{towelQty}</span>
-                      <button
-                        onClick={() => setTowelQty(q => Math.min(towels?.cleanTowels ?? 10, q + 1))}
-                        className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
-                      >+</button>
+                      <button onClick={() => setTowelQty(q => Math.min(towels?.cleanTowels ?? 10, q + 1))} className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center">+</button>
                     </div>
-                    {towels && towelQty > towels.cleanTowels && (
-                      <p className="text-xs text-red-500 mt-2">No hay suficientes toallas limpias en inventario</p>
-                    )}
+                    {towels && towelQty > towels.cleanTowels && <p className="text-xs text-red-500 mt-2">No hay suficientes toallas limpias en inventario</p>}
                   </div>
-
                   <div className="bg-slate-50 rounded-lg px-4 py-3">
                     <p className="text-xs text-slate-500">Hab. {room.roomNumber} · {reservation.guestName}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Las toallas quedan registradas en esta habitación. Al recoger las sucias, el sistema descuenta del total actual de la hab.
-                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">Las toallas quedan registradas en esta habitación. Al recoger las sucias, el sistema descuenta del total actual de la hab.</p>
                   </div>
-
                   <button
                     onClick={() => towelMutation.mutate()}
                     disabled={towelMutation.isPending || (towels ? towelQty > towels.cleanTowels : false)}
@@ -758,160 +685,82 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
             </div>
           )}
 
-          {/* ── Sección: EXTENDER ─────────────────────────────────────────── */}
+          {/* ── EXTENDER ─────────────────────────────────────────────────── */}
           {section === 'extender' && reservation && (
             <div className="p-6 space-y-5">
               <div className="bg-slate-50 rounded-xl p-4 space-y-2">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Estadía actual</p>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Salida actual</span>
-                  <span className="text-sm font-semibold text-slate-800">{formatDateLong(reservation.checkOutDate)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Noches actuales</span>
-                  <span className="text-sm text-slate-700">{reservation.numberOfNights}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Total estimado actual</span>
-                  <span className="text-sm text-slate-700">{reservation.estimatedTotal ? fmt(reservation.estimatedTotal) : '—'}</span>
-                </div>
+                <div className="flex justify-between"><span className="text-sm text-slate-500">Salida actual</span><span className="text-sm font-semibold text-slate-800">{formatDateLong(reservation.checkOutDate)}</span></div>
+                <div className="flex justify-between"><span className="text-sm text-slate-500">Noches actuales</span><span className="text-sm text-slate-700">{reservation.numberOfNights}</span></div>
+                <div className="flex justify-between"><span className="text-sm text-slate-500">Total estimado actual</span><span className="text-sm text-slate-700">{reservation.estimatedTotal ? fmt(reservation.estimatedTotal) : '—'}</span></div>
               </div>
 
-              {/* Toggle extender / acortar */}
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => { setExtenderTipo('EXTENDER'); setNewCheckOut(''); setExtendError(''); setExtendDone(false); }}
-                  className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${extenderTipo === 'EXTENDER'
-                    ? 'border-slate-700 bg-slate-700 text-white'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                >
-                  Extender
-                </button>
-                <button
-                  onClick={() => { setExtenderTipo('ACORTAR'); setNewCheckOut(''); setExtendError(''); setExtendDone(false); }}
-                  className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${extenderTipo === 'ACORTAR'
-                    ? 'border-amber-600 bg-amber-600 text-white'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                >
-                  Acortar
-                </button>
+                {(['EXTENDER', 'ACORTAR'] as const).map(tipo => (
+                  <button key={tipo}
+                    onClick={() => { setExtenderTipo(tipo); setNewCheckOut(''); setExtendError(''); setExtendDone(false); }}
+                    className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${extenderTipo === tipo
+                      ? tipo === 'EXTENDER' ? 'border-slate-700 bg-slate-700 text-white' : 'border-amber-600 bg-amber-600 text-white'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  >
+                    {tipo === 'EXTENDER' ? 'Extender' : 'Acortar'}
+                  </button>
+                ))}
               </div>
 
               {extendDone ? (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center">
-                  <p className="text-sm font-medium text-emerald-700">
-                    {extenderTipo === 'EXTENDER' ? 'Estadía extendida correctamente' : 'Estadía acortada correctamente'}
-                  </p>
+                  <p className="text-sm font-medium text-emerald-700">{extenderTipo === 'EXTENDER' ? 'Estadía extendida correctamente' : 'Estadía acortada correctamente'}</p>
                   <p className="text-xs text-slate-500 mt-1">Nueva salida: {newCheckOut ? formatDateLong(newCheckOut) : ''}</p>
-                  <button
-                    onClick={() => { setExtendDone(false); setNewCheckOut(''); }}
-                    className="mt-3 text-xs text-emerald-600 underline"
-                  >
-                    Modificar de nuevo
-                  </button>
+                  <button onClick={() => { setExtendDone(false); setNewCheckOut(''); }} className="mt-3 text-xs text-emerald-600 underline">Modificar de nuevo</button>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Nueva fecha de salida</label>
-                    <input
-                      type="date"
-                      value={newCheckOut}
+                    <input type="date" value={newCheckOut}
                       min={extenderTipo === 'EXTENDER' ? minExtendDate : reservation.checkInDate}
                       max={extenderTipo === 'ACORTAR' ? reservation.checkOutDate : undefined}
                       onChange={e => { setNewCheckOut(e.target.value); setExtendError(''); setExtendDone(false); }}
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                     />
-                    <p className="text-xs text-slate-400 mt-1">
-                      {extenderTipo === 'EXTENDER'
-                        ? 'Debe ser posterior a la fecha actual de salida.'
-                        : 'Debe ser anterior a la fecha actual de salida.'}
-                    </p>
+                    <p className="text-xs text-slate-400 mt-1">{extenderTipo === 'EXTENDER' ? 'Debe ser posterior a la fecha actual de salida.' : 'Debe ser anterior a la fecha actual de salida.'}</p>
                   </div>
-
                   {newCheckOut && reservation && (
                     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-2">
                       <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Resumen del cambio</p>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-slate-500">Salida anterior</span>
-                        <span className="text-sm text-slate-500 line-through">{formatDateLong(reservation.checkOutDate)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-slate-700">Nueva salida</span>
-                        <span className="text-sm font-semibold text-blue-700">{formatDateLong(newCheckOut)}</span>
-                      </div>
+                      <div className="flex justify-between"><span className="text-sm text-slate-500">Salida anterior</span><span className="text-sm text-slate-500 line-through">{formatDateLong(reservation.checkOutDate)}</span></div>
+                      <div className="flex justify-between"><span className="text-sm text-slate-700">Nueva salida</span><span className="text-sm font-semibold text-blue-700">{formatDateLong(newCheckOut)}</span></div>
                       <div className="flex justify-between border-t border-blue-100 pt-2">
-                        <span className="text-sm text-slate-500">
-                          {extenderTipo === 'EXTENDER' ? 'Noches adicionales' : 'Noches a quitar'}
-                        </span>
+                        <span className="text-sm text-slate-500">{extenderTipo === 'EXTENDER' ? 'Noches adicionales' : 'Noches a quitar'}</span>
                         <span className="text-sm font-medium text-slate-800">
-                          {Math.abs(Math.round(
-                            (new Date(newCheckOut + 'T12:00:00').getTime() -
-                              new Date(reservation.checkOutDate + 'T12:00:00').getTime())
-                            / (1000 * 60 * 60 * 24)
-                          ))} noche(s)
+                          {Math.abs(Math.round((new Date(newCheckOut + 'T12:00:00').getTime() - new Date(reservation.checkOutDate + 'T12:00:00').getTime()) / (1000 * 60 * 60 * 24)))} noche(s)
                         </span>
                       </div>
                     </div>
                   )}
-
-                  {extendError && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                      <p className="text-sm text-red-600">{extendError}</p>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => extendMutation.mutate()}
-                    disabled={!newCheckOut || extendMutation.isPending}
-                    className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
-                  >
-                    {extendMutation.isPending
-                      ? 'Guardando...'
-                      : extenderTipo === 'EXTENDER'
-                        ? 'Confirmar extensión'
-                        : 'Confirmar acortamiento'}
+                  {extendError && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2"><p className="text-sm text-red-600">{extendError}</p></div>}
+                  <button onClick={() => extendMutation.mutate()} disabled={!newCheckOut || extendMutation.isPending}
+                    className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors">
+                    {extendMutation.isPending ? 'Guardando...' : extenderTipo === 'EXTENDER' ? 'Confirmar extensión' : 'Confirmar acortamiento'}
                   </button>
                 </div>
               )}
             </div>
           )}
 
-          {/* ── Sección: ABONO ───────────────────────────────────────────── */}
+          {/* ── ABONO ─────────────────────────────────────────────────────── */}
           {section === 'abono' && reservation && (
             <div className="p-6 space-y-5">
-
               <div className="bg-slate-50 rounded-xl p-4 space-y-2.5">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Estado de cuenta</p>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Total estimado</span>
-                  <span className="text-sm font-medium text-slate-800">
-                    {reservation.estimatedTotal ? fmt(reservation.estimatedTotal) : '—'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Total abonado</span>
-                  <span className="text-sm font-medium text-emerald-600">
-                    {reservation.depositAmount ? fmt(reservation.depositAmount) : '$0'}
-                  </span>
-                </div>
-                {totalExtras > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-sm text-slate-500">Cobros extra</span>
-                    <span className="text-sm font-medium text-amber-600">{fmt(totalExtras)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between"><span className="text-sm text-slate-500">Total estimado</span><span className="text-sm font-medium text-slate-800">{reservation.estimatedTotal ? fmt(reservation.estimatedTotal) : '—'}</span></div>
+                <div className="flex justify-between"><span className="text-sm text-slate-500">Total abonado</span><span className="text-sm font-medium text-emerald-600">{reservation.depositAmount ? fmt(reservation.depositAmount) : '$0'}</span></div>
+                {totalExtras > 0 && <div className="flex justify-between"><span className="text-sm text-slate-500">Cobros extra</span><span className="text-sm font-medium text-amber-600">{fmt(totalExtras)}</span></div>}
                 <div className="border-t border-slate-200 pt-2.5 flex justify-between">
                   <span className="text-sm font-semibold text-slate-700">Saldo pendiente</span>
-                  <span className={`text-sm font-bold ${abonoResult
-                    ? (abonoResult.saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600')
-                    : ((saldoPendiente + totalExtras) > 0 ? 'text-amber-600' : 'text-emerald-600')
-                    }`}>
-                    {abonoResult
-                      ? (abonoResult.saldoPendiente > 0 ? fmt(abonoResult.saldoPendiente) : 'Al día')
-                      : ((saldoPendiente + totalExtras) > 0 ? fmt(saldoPendiente + totalExtras) : 'Al día')}
+                  <span className={`text-sm font-bold ${abonoResult ? (abonoResult.saldoPendiente > 0 ? 'text-amber-600' : 'text-emerald-600') : ((saldoPendiente + totalExtras) > 0 ? 'text-amber-600' : 'text-emerald-600')}`}>
+                    {abonoResult ? (abonoResult.saldoPendiente > 0 ? fmt(abonoResult.saldoPendiente) : 'Al día') : ((saldoPendiente + totalExtras) > 0 ? fmt(saldoPendiente + totalExtras) : 'Al día')}
                   </span>
                 </div>
               </div>
@@ -920,15 +769,8 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center space-y-1">
                   <p className="text-sm font-medium text-emerald-700">Abono registrado correctamente</p>
                   <p className="text-xs text-slate-500">Total abonado: {fmt(abonoResult.totalAbonado)}</p>
-                  <p className="text-xs text-slate-500">
-                    Saldo pendiente: {abonoResult.saldoPendiente > 0 ? fmt(abonoResult.saldoPendiente) : '$0'}
-                  </p>
-                  <button
-                    onClick={() => { setAbonoDone(false); setAbonoAmount(''); setAbonoNotes(''); setAbonoResult(null); }}
-                    className="mt-2 text-xs text-emerald-600 underline"
-                  >
-                    Registrar otro abono
-                  </button>
+                  <p className="text-xs text-slate-500">Saldo pendiente: {abonoResult.saldoPendiente > 0 ? fmt(abonoResult.saldoPendiente) : '$0'}</p>
+                  <button onClick={() => { setAbonoDone(false); setAbonoAmount(''); setAbonoNotes(''); setAbonoResult(null); }} className="mt-2 text-xs text-emerald-600 underline">Registrar otro abono</button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -936,78 +778,34 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Monto del abono</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-                      <input
-                        type="number" value={abonoAmount}
-                        onChange={e => { setAbonoAmount(e.target.value); setAbonoError(''); }}
-                        placeholder="0" min="1"
-                        className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                      />
+                      <input type="number" value={abonoAmount} onChange={e => { setAbonoAmount(e.target.value); setAbonoError(''); }} placeholder="0" min="1"
+                        className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
                     </div>
                     {abonoAmount && Number(abonoAmount) > (saldoPendiente + totalExtras) && (
-                      <p className="text-xs text-red-500 mt-1">
-                        El monto no puede superar el saldo pendiente ({fmt(saldoPendiente + totalExtras)})
-                      </p>
+                      <p className="text-xs text-red-500 mt-1">El monto no puede superar el saldo pendiente ({fmt(saldoPendiente + totalExtras)})</p>
                     )}
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Método de pago</label>
-                    <select
-                      value={abonoMethod} onChange={e => setAbonoMethod(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                    >
-                      {PAYMENT_METHODS.map(m => (
-                        <option key={m.value} value={m.value}>{m.label}</option>
-                      ))}
-                    </select>
+                    <MethodSelect value={abonoMethod} onChange={setAbonoMethod} />
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Observación <span className="text-slate-400 font-normal">(opcional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={abonoNotes}
-                      onChange={e => setAbonoNotes(e.target.value)}
-                      placeholder="Ej: pago con billete roto, abono parcial..."
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                    />
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Observación <span className="text-slate-400 font-normal">(opcional)</span></label>
+                    <input type="text" value={abonoNotes} onChange={e => setAbonoNotes(e.target.value)} placeholder="Ej: pago con billete roto, abono parcial..."
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
                   </div>
-
                   {abonoAmount && Number(abonoAmount) > 0 && (
                     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-1.5">
                       <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Resumen</p>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-slate-500">Abono a registrar</span>
-                        <span className="text-sm font-semibold text-blue-700">{fmt(Number(abonoAmount))}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-slate-500">Saldo después del abono</span>
-                        <span className="text-sm font-medium text-slate-700">
-                          {fmt(Math.max(0, saldoPendiente + totalExtras - Number(abonoAmount)))}
-                        </span>
-                      </div>
-                      {abonoNotes.trim() && (
-                        <div className="border-t border-blue-100 pt-1.5">
-                          <span className="text-xs text-slate-500">Obs: </span>
-                          <span className="text-xs text-slate-700">{abonoNotes.trim()}</span>
-                        </div>
-                      )}
+                      <div className="flex justify-between"><span className="text-sm text-slate-500">Abono a registrar</span><span className="text-sm font-semibold text-blue-700">{fmt(Number(abonoAmount))}</span></div>
+                      <div className="flex justify-between"><span className="text-sm text-slate-500">Saldo después del abono</span><span className="text-sm font-medium text-slate-700">{fmt(Math.max(0, saldoPendiente + totalExtras - Number(abonoAmount)))}</span></div>
+                      {abonoNotes.trim() && <div className="border-t border-blue-100 pt-1.5"><span className="text-xs text-slate-500">Obs: </span><span className="text-xs text-slate-700">{abonoNotes.trim()}</span></div>}
                     </div>
                   )}
-
-                  {abonoError && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                      <p className="text-sm text-red-600">{abonoError}</p>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => abonoMutation.mutate()}
+                  {abonoError && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2"><p className="text-sm text-red-600">{abonoError}</p></div>}
+                  <button onClick={() => abonoMutation.mutate()}
                     disabled={!abonoAmount || Number(abonoAmount) <= 0 || Number(abonoAmount) > (saldoPendiente + totalExtras) || abonoMutation.isPending}
-                    className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
-                  >
+                    className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors">
                     {abonoMutation.isPending ? 'Registrando...' : `Registrar abono de ${abonoAmount ? fmt(Number(abonoAmount)) : '...'}`}
                   </button>
                 </div>
@@ -1015,228 +813,123 @@ export default function RoomDetailPanel({ room, onClose, onEntregar }: Props) {
             </div>
           )}
 
-          {/* ── Sección: OCUPANTES ───────────────────────────────────── */}
+          {/* ── OCUPANTES ────────────────────────────────────────────────── */}
           {section === 'ocupantes' && reservation && (
             <div className="p-6 space-y-5">
               <div className="bg-slate-50 rounded-xl p-4 space-y-2">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Ocupación actual</p>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Personas registradas</span>
-                  <span className="text-sm font-semibold text-slate-800">{reservation.numberOfGuests}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Tipo</span>
-                  <span className="text-sm text-slate-700">{OCCUPANT_LABELS[reservation.occupantType] ?? reservation.occupantType}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Total estimado actual</span>
-                  <span className="text-sm text-slate-700">{reservation.estimatedTotal ? fmt(reservation.estimatedTotal) : '—'}</span>
-                </div>
+                <div className="flex justify-between"><span className="text-sm text-slate-500">Personas registradas</span><span className="text-sm font-semibold text-slate-800">{reservation.numberOfGuests}</span></div>
+                <div className="flex justify-between"><span className="text-sm text-slate-500">Tipo</span><span className="text-sm text-slate-700">{OCCUPANT_LABELS[reservation.occupantType] ?? reservation.occupantType}</span></div>
+                <div className="flex justify-between"><span className="text-sm text-slate-500">Total estimado actual</span><span className="text-sm text-slate-700">{reservation.estimatedTotal ? fmt(reservation.estimatedTotal) : '—'}</span></div>
               </div>
 
               {ocupantesDone && ocupantesResult ? (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center space-y-1">
                   <p className="text-sm font-medium text-emerald-700">Ocupantes actualizados</p>
-                  <p className="text-xs text-slate-500">
-                    {ocupantesResult.oldNumberOfGuests} → {ocupantesResult.newNumberOfGuests} personas
-                  </p>
-                  {ocupantesResult.towelsToDeliver > 0 && (
-                    <p className="text-xs text-blue-600 font-medium">
-                      Recuerda entregar {ocupantesResult.towelsToDeliver} toalla{ocupantesResult.towelsToDeliver !== 1 ? 's' : ''} adicional{ocupantesResult.towelsToDeliver !== 1 ? 'es' : ''}
-                    </p>
-                  )}
-                  <p className="text-xs text-slate-500">
-                    Nuevo total estimado: {fmt(ocupantesResult.newEstimatedTotal)}
-                  </p>
-                  <button
-                    onClick={() => { setOcupantesDone(false); setOcupantesResult(null); setNewGuests(0); }}
-                    className="mt-2 text-xs text-emerald-600 underline"
-                  >
-                    Modificar de nuevo
-                  </button>
+                  <p className="text-xs text-slate-500">{ocupantesResult.oldNumberOfGuests} → {ocupantesResult.newNumberOfGuests} personas</p>
+                  {ocupantesResult.towelsToDeliver > 0 && <p className="text-xs text-blue-600 font-medium">Recuerda entregar {ocupantesResult.towelsToDeliver} toalla{ocupantesResult.towelsToDeliver !== 1 ? 's' : ''} adicional{ocupantesResult.towelsToDeliver !== 1 ? 'es' : ''}</p>}
+                  <p className="text-xs text-slate-500">Nuevo total estimado: {fmt(ocupantesResult.newEstimatedTotal)}</p>
+                  <button onClick={() => { setOcupantesDone(false); setOcupantesResult(null); setNewGuests(0); }} className="mt-2 text-xs text-emerald-600 underline">Modificar de nuevo</button>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-2">Nuevo número de personas</label>
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setNewGuests(g => Math.max(1, g - 1))}
-                        className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
-                      >−</button>
-                      <span className="text-2xl font-bold text-slate-800 w-8 text-center">
-                        {newGuests || reservation.numberOfGuests}
-                      </span>
-                      <button
-                        onClick={() => setNewGuests(g => (g || reservation.numberOfGuests) + 1)}
-                        className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center"
-                      >+</button>
+                      <button onClick={() => setNewGuests(g => Math.max(1, g - 1))} className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center">−</button>
+                      <span className="text-2xl font-bold text-slate-800 w-8 text-center">{newGuests || reservation.numberOfGuests}</span>
+                      <button onClick={() => setNewGuests(g => (g || reservation.numberOfGuests) + 1)} className="w-10 h-10 rounded-lg border border-slate-300 text-slate-600 text-lg font-bold hover:bg-slate-50 flex items-center justify-center">+</button>
                     </div>
                   </div>
-
                   {newGuests > 0 && newGuests !== reservation.numberOfGuests && (
                     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-1.5">
                       <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Resumen del cambio</p>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-slate-500">Personas antes</span>
-                        <span className="text-sm text-slate-500 line-through">{reservation.numberOfGuests}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-slate-700">Personas nuevas</span>
-                        <span className="text-sm font-semibold text-blue-700">{newGuests}</span>
-                      </div>
+                      <div className="flex justify-between"><span className="text-sm text-slate-500">Personas antes</span><span className="text-sm text-slate-500 line-through">{reservation.numberOfGuests}</span></div>
+                      <div className="flex justify-between"><span className="text-sm text-slate-700">Personas nuevas</span><span className="text-sm font-semibold text-blue-700">{newGuests}</span></div>
                       {newGuests > reservation.numberOfGuests && (
                         <div className="flex justify-between border-t border-blue-100 pt-1.5">
                           <span className="text-sm text-slate-500">Toallas a entregar</span>
-                          <span className="text-sm font-medium text-slate-800">
-                            {newGuests - reservation.numberOfGuests} toalla{newGuests - reservation.numberOfGuests !== 1 ? 's' : ''}
-                          </span>
+                          <span className="text-sm font-medium text-slate-800">{newGuests - reservation.numberOfGuests} toalla{newGuests - reservation.numberOfGuests !== 1 ? 's' : ''}</span>
                         </div>
                       )}
                       <p className="text-xs text-slate-400 mt-1">El nuevo precio aplica solo para las noches restantes.</p>
                     </div>
                   )}
-
-                  {ocupantesError && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                      <p className="text-sm text-red-600">{ocupantesError}</p>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => ocupantesMutation.mutate()}
+                  {ocupantesError && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2"><p className="text-sm text-red-600">{ocupantesError}</p></div>}
+                  <button onClick={() => ocupantesMutation.mutate()}
                     disabled={!newGuests || newGuests === reservation.numberOfGuests || ocupantesMutation.isPending}
-                    className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
-                  >
-                    {ocupantesMutation.isPending
-                      ? 'Guardando...'
-                      : `Actualizar a ${newGuests || reservation.numberOfGuests} persona${(newGuests || reservation.numberOfGuests) !== 1 ? 's' : ''}`}
+                    className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors">
+                    {ocupantesMutation.isPending ? 'Guardando...' : `Actualizar a ${newGuests || reservation.numberOfGuests} persona${(newGuests || reservation.numberOfGuests) !== 1 ? 's' : ''}`}
                   </button>
                 </div>
               )}
             </div>
           )}
-          {/* ── Sección: COBRO EXTRA ─────────────────────────────────── */}
+
+          {/* ── COBRO EXTRA ───────────────────────────────────────────────── */}
           {section === 'cobroExtra' && reservation && (
             <div className="p-6 space-y-5">
-
-              {/* Tipo */}
               <div>
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Tipo de cobro</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setCobroTipo('PAGO')}
-                    className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${cobroTipo === 'PAGO'
-                      ? 'border-slate-700 bg-slate-700 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                  >
-                    Pago directo
-                  </button>
-                  <button
-                    onClick={() => setCobroTipo('CARGO')}
-                    className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${cobroTipo === 'CARGO'
-                      ? 'border-amber-600 bg-amber-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                  >
-                    Anotar a habitación
-                  </button>
+                  {(['PAGO', 'CARGO'] as const).map(tipo => (
+                    <button key={tipo} onClick={() => setCobroTipo(tipo)}
+                      className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${cobroTipo === tipo
+                        ? tipo === 'PAGO' ? 'border-slate-700 bg-slate-700 text-white' : 'border-amber-600 bg-amber-600 text-white'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                      {tipo === 'PAGO' ? 'Pago directo' : 'Anotar a habitación'}
+                    </button>
+                  ))}
                 </div>
-                <p className="text-xs text-slate-400 mt-2">
-                  {cobroTipo === 'PAGO'
-                    ? 'El monto se registra en caja inmediatamente.'
-                    : 'El cargo se suma al total y se cobra al checkout.'}
-                </p>
+                <p className="text-xs text-slate-400 mt-2">{cobroTipo === 'PAGO' ? 'El monto se registra en caja inmediatamente.' : 'El cargo se suma al total y se cobra al checkout.'}</p>
               </div>
 
-              {/* Descripción */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Descripción</label>
-                <input
-                  type="text"
-                  value={cobroDesc}
-                  onChange={e => { setCobroDesc(e.target.value); setCobroError(''); }}
-                  placeholder="Ej: Daño en habitación, servicio adicional..."
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                />
+                <input type="text" value={cobroDesc} onChange={e => { setCobroDesc(e.target.value); setCobroError(''); }} placeholder="Ej: Daño en habitación, servicio adicional..."
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
               </div>
 
-              {/* Monto */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Monto</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-                  <input
-                    type="number"
-                    value={cobroAmount}
-                    onChange={e => { setCobroAmount(e.target.value); setCobroError(''); }}
-                    placeholder="0"
-                    min="1"
-                    className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                  />
+                  <input type="number" value={cobroAmount} onChange={e => { setCobroAmount(e.target.value); setCobroError(''); }} placeholder="0" min="1"
+                    className="w-full border border-slate-300 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
                 </div>
-
               </div>
 
-              {/* Método — solo si es pago directo */}
               {cobroTipo === 'PAGO' && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Método de pago</label>
-                  <select
-                    value={cobroMethod}
-                    onChange={e => setCobroMethod(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                  >
-                    {PAYMENT_METHODS.map(m => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
+                  <MethodSelect value={cobroMethod} onChange={setCobroMethod} />
                 </div>
               )}
 
-              {cobroError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  <p className="text-sm text-red-600">{cobroError}</p>
-                </div>
-              )}
+              {cobroError && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2"><p className="text-sm text-red-600">{cobroError}</p></div>}
 
               {cobroDone ? (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center">
-                  <p className="text-sm font-medium text-emerald-700">
-                    {cobroTipo === 'PAGO' ? 'Pago registrado en caja' : 'Cargo anotado a la habitación'}
-                  </p>
-                  <button
-                    onClick={() => { setCobroDone(false); setCobroAmount(''); setCobroDesc(''); }}
-                    className="mt-3 text-xs text-emerald-600 underline"
-                  >
-                    Registrar otro
-                  </button>
+                  <p className="text-sm font-medium text-emerald-700">{cobroTipo === 'PAGO' ? 'Pago registrado en caja' : 'Cargo anotado a la habitación'}</p>
+                  <button onClick={() => { setCobroDone(false); setCobroAmount(''); setCobroDesc(''); }} className="mt-3 text-xs text-emerald-600 underline">Registrar otro</button>
                 </div>
               ) : (
-                <button
-                  onClick={() => cobroExtraMutation.mutate()}
+                <button onClick={() => cobroExtraMutation.mutate()}
                   disabled={!cobroAmount || Number(cobroAmount) <= 0 || cobroExtraMutation.isPending}
-                  className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors"
-                >
-                  {cobroExtraMutation.isPending
-                    ? 'Registrando...'
-                    : cobroTipo === 'PAGO'
-                      ? `Registrar pago de ${cobroAmount ? fmt(Number(cobroAmount)) : '...'}`
-                      : `Anotar ${cobroAmount ? fmt(Number(cobroAmount)) : '...'} a habitación`}
+                  className="w-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white text-sm font-medium py-3 rounded-xl transition-colors">
+                  {cobroExtraMutation.isPending ? 'Registrando...' : cobroTipo === 'PAGO' ? `Registrar pago de ${cobroAmount ? fmt(Number(cobroAmount)) : '...'}` : `Anotar ${cobroAmount ? fmt(Number(cobroAmount)) : '...'} a habitación`}
                 </button>
               )}
             </div>
           )}
+
         </div>
 
         {/* Footer */}
         {reservation && room.status === 'OCCUPIED' && !room.rato && (
           <div className="border-t border-slate-200 px-6 py-4">
-            <button
-              onClick={() => onEntregar(reservation.id)}
-              className="w-full bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
-            >
+            <button onClick={() => onEntregar(reservation.id)}
+              className="w-full bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
               Iniciar checkout
             </button>
           </div>

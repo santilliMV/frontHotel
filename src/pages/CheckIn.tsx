@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { guestsApi, checkInApi, roomsApi } from '../api/hotel-api';
 import type {
@@ -509,6 +510,14 @@ export default function CheckIn() {
   // ─── Payment methods dinámicos ────────────────────────────────────────────
   const { options: paymentMethods, getLabel: getMethodLabel } = usePaymentMethods();
 
+  // ─── Inventario de toallas ────────────────────────────────────────────────
+  const { data: towelInventory } = useQuery<{ cleanTowels: number }>({
+    queryKey: ['towels-inventory'],
+    queryFn: () => apiClient.get('/towels/inventory').then(r => r.data),
+    staleTime: 30_000,
+  });
+  const noHayToallas = (towelInventory?.cleanTowels ?? 1) === 0;
+
   const [step, setStep] = useState<Step>('guest');
 
   // Guest
@@ -544,7 +553,6 @@ export default function CheckIn() {
   const [electronicInvoice, setElectronicInvoice] = useState(false);
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
-  const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [discountApproved, setDiscountApproved] = useState(false);
   const [additionalCharge, setAdditionalCharge] = useState('');
   const [additionalChargeReason, setAdditionalChargeReason] = useState('');
@@ -1056,9 +1064,16 @@ export default function CheckIn() {
             </>
           )}
 
+          {noHayToallas && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm mt-4">
+              <span className="font-semibold block">Sin toallas disponibles</span>
+              No hay toallas limpias en inventario. No es posible arrendar la habitación hasta que se repongan.
+            </div>
+          )}
+
           <div className="flex gap-3 mt-5">
             <button className={btnBack} onClick={() => setStep('guest')}>← Volver</button>
-            <button className={`${btn} flex-1`} disabled={!canAdvRoom} onClick={() => setStep('companions')}>Continuar →</button>
+            <button className={`${btn} flex-1`} disabled={!canAdvRoom || noHayToallas} onClick={() => setStep('companions')}>Continuar →</button>
           </div>
         </div>
       )}
@@ -1178,9 +1193,9 @@ export default function CheckIn() {
               <div className="mb-4">
                 {!discountApproved ? (
                   <button
-                    onClick={() => setShowDiscountModal(true)}
+                    onClick={() => setDiscountApproved(true)}
                     className="w-full py-3 border-2 border-dashed border-slate-200 hover:border-amber-400 rounded-xl text-sm text-slate-500 hover:text-amber-700 transition-all">
-                    + Aplicar descuento (requiere clave admin)
+                    + Aplicar descuento
                   </button>
                 ) : (
                   <div className="border border-slate-200 rounded-xl p-4">
@@ -1481,15 +1496,7 @@ export default function CheckIn() {
         </div>
       )}
 
-      {/* Modal descuento */}
-      {showDiscountModal && (
-        <AdminPasswordModal
-          title="Aplicar descuento"
-          description="Los descuentos requieren autorización del administrador."
-          onConfirm={() => { setDiscountApproved(true); setShowDiscountModal(false); }}
-          onCancel={() => setShowDiscountModal(false)}
-        />
-      )}
+      {/* Modal descuento eliminado — el descuento ya no requiere clave */}
     </div>
   );
 }
